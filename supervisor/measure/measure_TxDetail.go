@@ -101,6 +101,24 @@ func (ttd *TestTxDetail) writeToCSV() {
 	measureVals := make([][]string, 0)
 
 	for key, val := range ttd.txHash2DetailTime {
+		// Calculate confirmed latency with validation
+		var confirmedLatency int64
+		if !val.TxProposeTimestamp.IsZero() && !val.TxCommitTimestamp.IsZero() &&
+			val.TxProposeTimestamp.Before(val.TxCommitTimestamp) &&
+			val.TxProposeTimestamp.Year() > 2020 { // Sanity check
+			
+			confirmedLatency = val.TxCommitTimestamp.Sub(val.TxProposeTimestamp).Milliseconds()
+			
+			// Additional validation: reject obviously wrong values
+			if confirmedLatency < 0 || confirmedLatency > 500000 { // > 500 seconds
+				// Skip this transaction with invalid latency
+				continue
+			}
+		} else {
+			// Skip transactions with invalid timestamps
+			continue
+		}
+		
 		csvLine := []string{
 			new(big.Int).SetBytes([]byte(key)).String(),
 
@@ -114,7 +132,7 @@ func (ttd *TestTxDetail) writeToCSV() {
 			timestampToString(val.Broker1CommitTimestamp),
 			timestampToString(val.Broker2CommitTimestamp),
 
-			strconv.FormatInt(int64(val.TxCommitTimestamp.Sub(val.TxProposeTimestamp).Milliseconds()), 10),
+			strconv.FormatInt(confirmedLatency, 10),
 		}
 		measureVals = append(measureVals, csvLine)
 	}

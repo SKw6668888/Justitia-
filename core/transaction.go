@@ -31,6 +31,12 @@ type Transaction struct {
 	OriginalSender utils.Address
 	FinalRecipient utils.Address
 	RawTxHash      []byte
+
+	// Justitia incentive mechanism fields
+	IsCrossShard     bool      // whether this is a cross-shard transaction
+	JustitiaReward   float64   // reward/subsidy R for cross-shard transactions
+	IsRelay2         bool      // whether this is the second phase of relay (executed in recipient shard)
+	OriginalPropTime time.Time // original proposal time (for relay2 txs to track end-to-end latency)
 }
 
 func (tx *Transaction) PrintTx() string {
@@ -88,5 +94,13 @@ func NewTransaction(sender, recipient string, value *big.Int, nonce uint64, prop
 	tx.RawTxHash = nil
 	tx.HasBroker = false
 	tx.SenderIsBroker = false
+	
+	// Initialize Justitia fields
+	tx.IsCrossShard = false
+	tx.JustitiaReward = 0.0
+	tx.IsRelay2 = false
+	// Set OriginalPropTime to the initial time (will be preserved across relay)
+	tx.OriginalPropTime = proposeTime
+	
 	return tx
 }

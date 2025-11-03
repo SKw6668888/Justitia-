@@ -121,7 +121,7 @@ func (p *PbftConsensusNode) RelayMsgSend() {
 			continue
 		}
 		relay := message.Relay{
-			Txs:           p.CurChain.Txpool.RelayPool[sid],
+			Txs:           p.CurChain.Txpool.GetRelayPoolTxs(sid),
 			SenderShardID: p.ShardID,
 			SenderSeq:     p.sequenceID,
 		}
@@ -146,14 +146,15 @@ func (p *PbftConsensusNode) RelayWithProofSend(block *core.Block) {
 			continue
 		}
 
-		txHashes := make([][]byte, len(p.CurChain.Txpool.RelayPool[sid]))
-		for i, tx := range p.CurChain.Txpool.RelayPool[sid] {
+		relayTxs := p.CurChain.Txpool.GetRelayPoolTxs(sid)
+		txHashes := make([][]byte, len(relayTxs))
+		for i, tx := range relayTxs {
 			txHashes[i] = tx.TxHash[:]
 		}
 		txProofs := chain.TxProofBatchGenerateOnBlock(txHashes, block)
 
 		rwp := message.RelayWithProof{
-			Txs:           p.CurChain.Txpool.RelayPool[sid],
+			Txs:           relayTxs,
 			TxProofs:      txProofs,
 			SenderShardID: p.ShardID,
 			SenderSeq:     p.sequenceID,

@@ -24,13 +24,13 @@ import (
 )
 
 type BlockChain struct {
-	db           ethdb.Database      // the leveldb database to store in the disk, for status trie
-	triedb       *trie.Database      // the trie database which helps to store the status trie
-	ChainConfig  *params.ChainConfig // the chain configuration, which can help to identify the chain
-	CurrentBlock *core.Block         // the top block in this blockchain
-	Storage      *storage.Storage    // Storage is the bolt-db to store the blocks
-	Txpool       *core.TxPool        // the transaction pool
-	PartitionMap map[string]uint64   // the partition map which is defined by some algorithm can help account parition
+	db           ethdb.Database         // the leveldb database to store in the disk, for status trie
+	triedb       *trie.Database         // the trie database which helps to store the status trie
+	ChainConfig  *params.ChainConfig    // the chain configuration, which can help to identify the chain
+	CurrentBlock *core.Block            // the top block in this blockchain
+	Storage      *storage.Storage       // Storage is the bolt-db to store the blocks
+	Txpool       core.TxPoolInterface   // the transaction pool (can be TxPool or PriorityTxPool)
+	PartitionMap map[string]uint64      // the partition map which is defined by some algorithm can help account parition
 	pmlock       sync.RWMutex
 }
 
@@ -252,10 +252,22 @@ func (bc *BlockChain) AddBlock(b *core.Block) {
 func NewBlockChain(cc *params.ChainConfig, db ethdb.Database) (*BlockChain, error) {
 	fmt.Println("Generating a new blockchain", db)
 	chainDBfp := params.DatabaseWrite_path + fmt.Sprintf("chainDB/S%d_N%d", cc.ShardID, cc.NodeID)
+	
+	// Choose transaction pool implementation based on Justitia parameter
+	var txpool core.TxPoolInterface
+	if params.EnableJustitia == 1 {
+		txpool = core.NewPriorityTxPool()
+		fmt.Printf("S%dN%d: Using PriorityTxPool (Justitia enabled with R=%.2f)\n", 
+			cc.ShardID, cc.NodeID, params.JustitiaRewardBase)
+	} else {
+		txpool = core.NewTxPool()
+		fmt.Printf("S%dN%d: Using standard TxPool (FIFO)\n", cc.ShardID, cc.NodeID)
+	}
+	
 	bc := &BlockChain{
 		db:           db,
 		ChainConfig:  cc,
-		Txpool:       core.NewTxPool(),
+		Txpool:       txpool,
 		Storage:      storage.NewStorage(chainDBfp, cc),
 		PartitionMap: make(map[string]uint64),
 	}

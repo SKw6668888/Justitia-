@@ -30,6 +30,10 @@ func (txpool *TxPool) AddTx2Pool(tx *Transaction) {
 	if tx.Time.IsZero() {
 		tx.Time = time.Now()
 	}
+	// Save original time for Justitia mechanism (only if not already set)
+	if tx.OriginalPropTime.IsZero() {
+		tx.OriginalPropTime = tx.Time
+	}
 	txpool.TxQueue = append(txpool.TxQueue, tx)
 }
 
@@ -40,6 +44,10 @@ func (txpool *TxPool) AddTxs2Pool(txs []*Transaction) {
 	for _, tx := range txs {
 		if tx.Time.IsZero() {
 			tx.Time = time.Now()
+		}
+		// Save original time for Justitia mechanism (only if not already set)
+		if tx.OriginalPropTime.IsZero() {
+			tx.OriginalPropTime = tx.Time
 		}
 		txpool.TxQueue = append(txpool.TxQueue, tx)
 	}
@@ -168,4 +176,41 @@ func (txpool *TxPool) TransferTxs(addr utils.Address) []*Transaction {
 	txpool.TxQueue = newTxQueue
 	txpool.RelayPool = newRelayPool
 	return txTransfered
+}
+
+// Filter transactions based on a custom function (for CLPA account transfer)
+func (txpool *TxPool) FilterTxs(filter func(*Transaction) bool) []*Transaction {
+	txpool.lock.Lock()
+	defer txpool.lock.Unlock()
+	
+	filtered := make([]*Transaction, 0)
+	remaining := make([]*Transaction, 0)
+	
+	for _, tx := range txpool.TxQueue {
+		if filter(tx) {
+			filtered = append(filtered, tx)
+		} else {
+			remaining = append(remaining, tx)
+		}
+	}
+	
+	txpool.TxQueue = remaining
+	return filtered
+}
+
+// Initialize/Reset the relay pool
+func (txpool *TxPool) InitRelayPool() {
+	txpool.lock.Lock()
+	defer txpool.lock.Unlock()
+	txpool.RelayPool = make(map[uint64][]*Transaction)
+}
+
+// Get relay transactions for a specific shard
+func (txpool *TxPool) GetRelayPoolTxs(shardID uint64) []*Transaction {
+	txpool.lock.Lock()
+	defer txpool.lock.Unlock()
+	if txs, ok := txpool.RelayPool[shardID]; ok {
+		return txs
+	}
+	return make([]*Transaction, 0)
 }

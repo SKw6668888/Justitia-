@@ -169,6 +169,10 @@ func (cphm *CLPAPbftInsideExtraHandleMod_forBroker) HandleinCommit(cmsg *message
 		msg_send := message.MergeMessage(message.CBlockInfo, bByte)
 		networks.TcpDial(msg_send, cphm.pbftNode.ip_nodeTable[params.SupervisorShard][0])
 		cphm.pbftNode.pl.Plog.Printf("S%dN%d : sended excuted txs\n", cphm.pbftNode.ShardID, cphm.pbftNode.NodeID)
+		
+		// Get txpool length before acquiring lock to avoid deadlock
+		txpoolLen := cphm.pbftNode.CurChain.Txpool.GetTxQueueLen()
+		
 		cphm.pbftNode.CurChain.Txpool.GetLocked()
 		metricName := []string{
 			"Block Height",
@@ -185,11 +189,11 @@ func (cphm *CLPAPbftInsideExtraHandleMod_forBroker) HandleinCommit(cmsg *message
 			"SUM of confirm latency (ms, Broker2 Txs) (Duration: Broker2 proposed -> Broker2 Commit)",
 		}
 		metricVal := []string{
-			strconv.Itoa(int(block.Header.Number)),
-			strconv.Itoa(bim.Epoch),
-			strconv.Itoa(len(cphm.pbftNode.CurChain.Txpool.TxQueue)),
-			strconv.Itoa(len(block.Body)),
-			strconv.Itoa(len(broker1Txs)),
+		strconv.Itoa(int(block.Header.Number)),
+		strconv.Itoa(bim.Epoch),
+		strconv.Itoa(txpoolLen),
+		strconv.Itoa(len(block.Body)),
+		strconv.Itoa(len(broker1Txs)),
 			strconv.Itoa(len(broker2Txs)),
 			strconv.FormatInt(bim.ProposeTime.UnixMilli(), 10),
 			strconv.FormatInt(bim.CommitTime.UnixMilli(), 10),

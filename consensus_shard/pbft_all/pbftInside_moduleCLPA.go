@@ -91,9 +91,9 @@ func (cphm *CLPAPbftInsideExtraHandleMod) HandleinCommit(cmsg *message.Commit) b
 
 	// now try to relay txs to other shards (for main nodes)
 	if cphm.pbftNode.NodeID == uint64(cphm.pbftNode.view.Load()) {
-		cphm.pbftNode.pl.Plog.Printf("S%dN%d : main node is trying to send relay txs at height = %d \n", cphm.pbftNode.ShardID, cphm.pbftNode.NodeID, block.Header.Number)
-		// generate relay pool and collect txs excuted
-		cphm.pbftNode.CurChain.Txpool.RelayPool = make(map[uint64][]*core.Transaction)
+	cphm.pbftNode.pl.Plog.Printf("S%dN%d : main node is trying to send relay txs at height = %d \n", cphm.pbftNode.ShardID, cphm.pbftNode.NodeID, block.Header.Number)
+	// generate relay pool and collect txs excuted
+	cphm.pbftNode.CurChain.Txpool.InitRelayPool()
 		interShardTxs := make([]*core.Transaction, 0)
 		relay1Txs := make([]*core.Transaction, 0)
 		relay2Txs := make([]*core.Transaction, 0)
@@ -149,6 +149,9 @@ func (cphm *CLPAPbftInsideExtraHandleMod) HandleinCommit(cmsg *message.Commit) b
 		go networks.TcpDial(msg_send, cphm.pbftNode.ip_nodeTable[params.SupervisorShard][0])
 		cphm.pbftNode.pl.Plog.Printf("S%dN%d : sended excuted txs\n", cphm.pbftNode.ShardID, cphm.pbftNode.NodeID)
 
+		// Get txpool length before acquiring lock to avoid deadlock
+		txpoolLen := cphm.pbftNode.CurChain.Txpool.GetTxQueueLen()
+
 		cphm.pbftNode.CurChain.Txpool.GetLocked()
 
 		metricName := []string{
@@ -166,11 +169,11 @@ func (cphm *CLPAPbftInsideExtraHandleMod) HandleinCommit(cmsg *message.Commit) b
 			"SUM of confirm latency (ms, Relay2 Txs) (Duration: Relay1 proposed -> Relay2 Commit)",
 		}
 		metricVal := []string{
-			strconv.Itoa(int(block.Header.Number)),
-			strconv.Itoa(bim.Epoch),
-			strconv.Itoa(len(cphm.pbftNode.CurChain.Txpool.TxQueue)),
-			strconv.Itoa(len(block.Body)),
-			strconv.Itoa(len(relay1Txs)),
+		strconv.Itoa(int(block.Header.Number)),
+		strconv.Itoa(bim.Epoch),
+		strconv.Itoa(txpoolLen),
+		strconv.Itoa(len(block.Body)),
+		strconv.Itoa(len(relay1Txs)),
 			strconv.Itoa(len(relay2Txs)),
 			strconv.FormatInt(bim.ProposeTime.UnixMilli(), 10),
 			strconv.FormatInt(bim.CommitTime.UnixMilli(), 10),

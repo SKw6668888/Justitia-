@@ -1,19 +1,19 @@
 {
-  "ConsensusMethod": 0,
+  "ConsensusMethod": 3,
   
   "PbftViewChangeTimeOut":20000,
 
   "ExpDataRootDir": "expTest",
 
-  "Block_Interval": 3000,
+  "Block_Interval": 5000,
 
-  "BlockSize": 3000,
+  "BlockSize": 1000,
   "BlocksizeInBytes": 200000,
   "UseBlocksizeInBytes": 0,
 
-  "InjectSpeed": 3000,
-  "TotalDataSize": 300000,
-  "TxBatchSize": 30000,
+  "InjectSpeed": 2000,
+  "TotalDataSize": 160000,
+  "TxBatchSize": 16000,
 
   "BrokerNum": 10,
   "RelayWithMerkleProof": 0,
@@ -23,5 +23,8 @@
 
   "Delay": -1,
   "JitterRange": -1,
-  "Bandwidth":10000000
+  "Bandwidth":10000000,
+
+  "EnableJustitia": 1,
+  "JustitiaRewardBase": 1000.0
 }

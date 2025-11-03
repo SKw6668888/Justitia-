@@ -63,9 +63,9 @@ func (rphm *RawRelayPbftExtraHandleMod) HandleinCommit(cmsg *message.Commit) boo
 
 	// now try to relay txs to other shards (for main nodes)
 	if rphm.pbftNode.NodeID == uint64(rphm.pbftNode.view.Load()) {
-		rphm.pbftNode.pl.Plog.Printf("S%dN%d : main node is trying to send relay txs at height = %d \n", rphm.pbftNode.ShardID, rphm.pbftNode.NodeID, block.Header.Number)
-		// generate relay pool and collect txs excuted
-		rphm.pbftNode.CurChain.Txpool.RelayPool = make(map[uint64][]*core.Transaction)
+	rphm.pbftNode.pl.Plog.Printf("S%dN%d : main node is trying to send relay txs at height = %d \n", rphm.pbftNode.ShardID, rphm.pbftNode.NodeID, block.Header.Number)
+	// generate relay pool and collect txs excuted
+	rphm.pbftNode.CurChain.Txpool.InitRelayPool()
 		interShardTxs := make([]*core.Transaction, 0)
 		relay1Txs := make([]*core.Transaction, 0)
 		relay2Txs := make([]*core.Transaction, 0)
@@ -81,6 +81,14 @@ func (rphm *RawRelayPbftExtraHandleMod) HandleinCommit(cmsg *message.Commit) boo
 			if rsid != rphm.pbftNode.ShardID {
 				relay1Txs = append(relay1Txs, tx)
 				tx.Relayed = true
+				
+				// Justitia: mark as cross-shard and add reward
+				if params.EnableJustitia == 1 {
+					tx.IsCrossShard = true
+					tx.JustitiaReward = params.JustitiaRewardBase
+					// Note: OriginalPropTime is now automatically saved when tx first enters pool
+				}
+				
 				rphm.pbftNode.CurChain.Txpool.AddRelayTx(tx, rsid)
 			} else {
 				if tx.Relayed {
@@ -119,6 +127,10 @@ func (rphm *RawRelayPbftExtraHandleMod) HandleinCommit(cmsg *message.Commit) boo
 		msg_send := message.MergeMessage(message.CBlockInfo, bByte)
 		go networks.TcpDial(msg_send, rphm.pbftNode.ip_nodeTable[params.SupervisorShard][0])
 		rphm.pbftNode.pl.Plog.Printf("S%dN%d : sended excuted txs\n", rphm.pbftNode.ShardID, rphm.pbftNode.NodeID)
+		
+		// Get txpool length before acquiring lock to avoid deadlock
+		txpoolLen := rphm.pbftNode.CurChain.Txpool.GetTxQueueLen()
+		
 		rphm.pbftNode.CurChain.Txpool.GetLocked()
 		metricName := []string{
 			"Block Height",
@@ -135,11 +147,11 @@ func (rphm *RawRelayPbftExtraHandleMod) HandleinCommit(cmsg *message.Commit) boo
 			"SUM of confirm latency (ms, Relay2 Txs) (Duration: Relay1 proposed -> Relay2 Commit)",
 		}
 		metricVal := []string{
-			strconv.Itoa(int(block.Header.Number)),
-			strconv.Itoa(bim.Epoch),
-			strconv.Itoa(len(rphm.pbftNode.CurChain.Txpool.TxQueue)),
-			strconv.Itoa(len(block.Body)),
-			strconv.Itoa(len(relay1Txs)),
+		strconv.Itoa(int(block.Header.Number)),
+		strconv.Itoa(bim.Epoch),
+		strconv.Itoa(txpoolLen),
+		strconv.Itoa(len(block.Body)),
+		strconv.Itoa(len(relay1Txs)),
 			strconv.Itoa(len(relay2Txs)),
 			strconv.FormatInt(bim.ProposeTime.UnixMilli(), 10),
 			strconv.FormatInt(bim.CommitTime.UnixMilli(), 10),

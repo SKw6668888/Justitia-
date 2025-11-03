@@ -3,6 +3,7 @@ package pbft_all
 import (
 	"blockEmulator/chain"
 	"blockEmulator/message"
+	"blockEmulator/params"
 	"encoding/json"
 	"log"
 )
@@ -35,6 +36,16 @@ func (rrom *RawRelayOutsideModule) handleRelay(content []byte) {
 		log.Panic(err)
 	}
 	rrom.pbftNode.pl.Plog.Printf("S%dN%d : has received relay txs from shard %d, the senderSeq is %d\n", rrom.pbftNode.ShardID, rrom.pbftNode.NodeID, relay.SenderShardID, relay.SenderSeq)
+
+	// Justitia: mark relay2 transactions for priority processing
+	for _, tx := range relay.Txs {
+		if params.EnableJustitia == 1 && tx.IsCrossShard {
+			tx.IsRelay2 = true
+			// Keep the original proposal time and Justitia reward
+			// These should have been set in the source shard
+		}
+	}
+
 	rrom.pbftNode.CurChain.Txpool.AddTxs2Pool(relay.Txs)
 	rrom.pbftNode.seqMapLock.Lock()
 	rrom.pbftNode.seqIDMap[relay.SenderShardID] = relay.SenderSeq

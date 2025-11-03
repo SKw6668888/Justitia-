@@ -120,6 +120,10 @@ func (rbhm *RawBrokerPbftExtraHandleMod) HandleinCommit(cmsg *message.Commit) bo
 		msg_send := message.MergeMessage(message.CBlockInfo, bByte)
 		go networks.TcpDial(msg_send, rbhm.pbftNode.ip_nodeTable[params.SupervisorShard][0])
 		rbhm.pbftNode.pl.Plog.Printf("S%dN%d : sended excuted txs\n", rbhm.pbftNode.ShardID, rbhm.pbftNode.NodeID)
+		
+		// Get txpool length before acquiring lock to avoid deadlock
+		txpoolLen := rbhm.pbftNode.CurChain.Txpool.GetTxQueueLen()
+		
 		rbhm.pbftNode.CurChain.Txpool.GetLocked()
 		metricName := []string{
 			"Block Height",
@@ -136,11 +140,11 @@ func (rbhm *RawBrokerPbftExtraHandleMod) HandleinCommit(cmsg *message.Commit) bo
 			"SUM of confirm latency (ms, Broker2 Txs) (Duration: Broker2 proposed -> Broker2 Commit)",
 		}
 		metricVal := []string{
-			strconv.Itoa(int(block.Header.Number)),
-			strconv.Itoa(bim.Epoch),
-			strconv.Itoa(len(rbhm.pbftNode.CurChain.Txpool.TxQueue)),
-			strconv.Itoa(len(block.Body)),
-			strconv.Itoa(len(broker1Txs)),
+		strconv.Itoa(int(block.Header.Number)),
+		strconv.Itoa(bim.Epoch),
+		strconv.Itoa(txpoolLen),
+		strconv.Itoa(len(block.Body)),
+		strconv.Itoa(len(broker1Txs)),
 			strconv.Itoa(len(broker2Txs)),
 			strconv.FormatInt(bim.ProposeTime.UnixMilli(), 10),
 			strconv.FormatInt(bim.CommitTime.UnixMilli(), 10),

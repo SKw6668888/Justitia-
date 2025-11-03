@@ -42,6 +42,10 @@ var (
 	DatasetFile    = `./selectedTxs_300K.csv` // The raw BlockTransaction data path
 
 	ReconfigTimeGap = 50 // The time gap between epochs. This variable is only used in CLPA / CLPA_Broker now.
+
+	// Justitia incentive mechanism parameters
+	EnableJustitia     = 0     // Enable Justitia incentive mechanism (1: enabled, 0: disabled)
+	JustitiaRewardBase = 100.0 // Base reward R for cross-shard transactions
 )
 
 // network layer
@@ -77,6 +81,9 @@ type globalConfig struct {
 	Delay       int `json:"Delay"`
 	JitterRange int `json:"JitterRange"`
 	Bandwidth   int `json:"Bandwidth"`
+
+	EnableJustitia     int     `json:"EnableJustitia"`
+	JustitiaRewardBase float64 `json:"JustitiaRewardBase"`
 }
 
 func ReadConfigFile() {
@@ -126,4 +133,8 @@ func ReadConfigFile() {
 	Delay = config.Delay
 	JitterRange = config.JitterRange
 	Bandwidth = config.Bandwidth
+
+	// Justitia params
+	EnableJustitia = config.EnableJustitia
+	JustitiaRewardBase = config.JustitiaRewardBase
 }
