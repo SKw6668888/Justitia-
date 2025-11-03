@@ -44,8 +44,12 @@ var (
 	ReconfigTimeGap = 50 // The time gap between epochs. This variable is only used in CLPA / CLPA_Broker now.
 
 	// Justitia incentive mechanism parameters
-	EnableJustitia     = 0     // Enable Justitia incentive mechanism (1: enabled, 0: disabled)
-	JustitiaRewardBase = 100.0 // Base reward R for cross-shard transactions
+	EnableJustitia       = 0            // Enable Justitia incentive mechanism (1: enabled, 0: disabled)
+	JustitiaSubsidyMode  = 1            // Subsidy mode: 0=None, 1=DestAvg, 2=SumAvg, 3=Custom
+	JustitiaWindowBlocks = 16           // Number of blocks for rolling average E(f_s)
+	JustitiaGammaMin     = uint64(0)    // Minimum subsidy budget per block (0=no limit)
+	JustitiaGammaMax     = uint64(0)    // Maximum subsidy budget per block (0=no limit)
+	JustitiaRewardBase   = 100.0        // Legacy: Base reward R (deprecated, use mode instead)
 )
 
 // network layer
@@ -82,8 +86,12 @@ type globalConfig struct {
 	JitterRange int `json:"JitterRange"`
 	Bandwidth   int `json:"Bandwidth"`
 
-	EnableJustitia     int     `json:"EnableJustitia"`
-	JustitiaRewardBase float64 `json:"JustitiaRewardBase"`
+	EnableJustitia       int     `json:"EnableJustitia"`
+	JustitiaSubsidyMode  int     `json:"JustitiaSubsidyMode"`
+	JustitiaWindowBlocks int     `json:"JustitiaWindowBlocks"`
+	JustitiaGammaMin     uint64  `json:"JustitiaGammaMin"`
+	JustitiaGammaMax     uint64  `json:"JustitiaGammaMax"`
+	JustitiaRewardBase   float64 `json:"JustitiaRewardBase"`
 }
 
 func ReadConfigFile() {
@@ -136,5 +144,9 @@ func ReadConfigFile() {
 
 	// Justitia params
 	EnableJustitia = config.EnableJustitia
+	JustitiaSubsidyMode = config.JustitiaSubsidyMode
+	JustitiaWindowBlocks = config.JustitiaWindowBlocks
+	JustitiaGammaMin = config.JustitiaGammaMin
+	JustitiaGammaMax = config.JustitiaGammaMax
 	JustitiaRewardBase = config.JustitiaRewardBase
 }

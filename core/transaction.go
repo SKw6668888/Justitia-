@@ -33,10 +33,25 @@ type Transaction struct {
 	RawTxHash      []byte
 
 	// Justitia incentive mechanism fields
-	IsCrossShard     bool      // whether this is a cross-shard transaction
-	JustitiaReward   float64   // reward/subsidy R for cross-shard transactions
-	IsRelay2         bool      // whether this is the second phase of relay (executed in recipient shard)
-	OriginalPropTime time.Time // original proposal time (for relay2 txs to track end-to-end latency)
+	FromShard        int       // Source shard ID (computed from sender address)
+	ToShard          int       // Destination shard ID (computed from recipient address)
+	IsCrossShard     bool      // Whether this is a cross-shard transaction
+	PairID           string    // Unique identifier for matching CTX and CTX' (typically TxHash as string)
+	FeeToProposer    uint64    // Fee that goes to proposer (f_AB for CTX, f for ITX)
+	ArrivalTime      time.Time // Time when tx arrived at mempool (for delay metrics)
+	TxSize           int       // Transaction size (default 1 for count-based capacity)
+	
+	// Cross-shard reward tracking
+	SubsidyR         uint64    // Subsidy R_AB for this CTX
+	UtilityA         uint64    // Utility uA for source shard proposer
+	UtilityB         uint64    // Utility uB for destination shard proposer
+	JustitiaCase     int       // Classification: 1=Case1, 2=Case2, 3=Case3 (0=not classified/ITX)
+	
+	// Relay tracking
+	IsRelay2         bool      // Whether this is the second phase of relay (executed in recipient shard)
+	OriginalPropTime time.Time // Original proposal time (for relay2 txs to track end-to-end latency)
+	IncludedInBlockA uint64    // Block number where CTX was included in source shard A
+	IncludedInBlockB uint64    // Block number where CTX' was included in dest shard B
 }
 
 func (tx *Transaction) PrintTx() string {
@@ -96,11 +111,23 @@ func NewTransaction(sender, recipient string, value *big.Int, nonce uint64, prop
 	tx.SenderIsBroker = false
 	
 	// Initialize Justitia fields
+	tx.FromShard = 0
+	tx.ToShard = 0
 	tx.IsCrossShard = false
-	tx.JustitiaReward = 0.0
+	tx.PairID = ""
+	tx.FeeToProposer = 0
+	tx.ArrivalTime = proposeTime
+	tx.TxSize = 1 // Default size = 1 for count-based capacity
+	
+	tx.SubsidyR = 0
+	tx.UtilityA = 0
+	tx.UtilityB = 0
+	tx.JustitiaCase = 0
+	
 	tx.IsRelay2 = false
-	// Set OriginalPropTime to the initial time (will be preserved across relay)
 	tx.OriginalPropTime = proposeTime
+	tx.IncludedInBlockA = 0
+	tx.IncludedInBlockB = 0
 	
 	return tx
 }

@@ -82,11 +82,12 @@ func (rphm *RawRelayPbftExtraHandleMod) HandleinCommit(cmsg *message.Commit) boo
 				relay1Txs = append(relay1Txs, tx)
 				tx.Relayed = true
 				
-				// Justitia: mark as cross-shard and add reward
+				// Justitia: mark as cross-shard
+				// Note: Subsidy R and utilities should be computed by the scheduler
+				// based on current fee environment when selecting transactions
 				if params.EnableJustitia == 1 {
 					tx.IsCrossShard = true
-					tx.JustitiaReward = params.JustitiaRewardBase
-					// Note: OriginalPropTime is now automatically saved when tx first enters pool
+					// SubsidyR will be computed dynamically by scheduler
 				}
 				
 				rphm.pbftNode.CurChain.Txpool.AddRelayTx(tx, rsid)

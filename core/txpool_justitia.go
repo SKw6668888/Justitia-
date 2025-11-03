@@ -23,23 +23,23 @@ func (pq TxPriorityQueue) Len() int { return len(pq) }
 
 func (pq TxPriorityQueue) Less(i, j int) bool {
 	// Higher priority if:
-	// 1. Cross-shard transaction with Justitia reward
-	// 2. Higher reward value
+	// 1. Cross-shard transaction with Justitia subsidy
+	// 2. Higher subsidy/utility value
 	// 3. Earlier timestamp (FIFO for same priority)
 
 	txI, txJ := pq[i], pq[j]
 
-	// If one is cross-shard with reward and the other is not, prioritize the cross-shard
-	if txI.IsCrossShard && txI.JustitiaReward > 0 && (!txJ.IsCrossShard || txJ.JustitiaReward == 0) {
+	// If one is cross-shard with subsidy and the other is not, prioritize the cross-shard
+	if txI.IsCrossShard && txI.SubsidyR > 0 && (!txJ.IsCrossShard || txJ.SubsidyR == 0) {
 		return true
 	}
-	if txJ.IsCrossShard && txJ.JustitiaReward > 0 && (!txI.IsCrossShard || txI.JustitiaReward == 0) {
+	if txJ.IsCrossShard && txJ.SubsidyR > 0 && (!txI.IsCrossShard || txI.SubsidyR == 0) {
 		return false
 	}
 
-	// Both are cross-shard with rewards, compare reward values
-	if txI.IsCrossShard && txJ.IsCrossShard && txI.JustitiaReward != txJ.JustitiaReward {
-		return txI.JustitiaReward > txJ.JustitiaReward
+	// Both are cross-shard with subsidies, compare subsidy values
+	if txI.IsCrossShard && txJ.IsCrossShard && txI.SubsidyR != txJ.SubsidyR {
+		return txI.SubsidyR > txJ.SubsidyR
 	}
 
 	// Same priority level, use FIFO (earlier time has higher priority)

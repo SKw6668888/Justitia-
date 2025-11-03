@@ -18,13 +18,17 @@
   "BrokerNum": 10,
   "RelayWithMerkleProof": 0,
   
-  "DatasetFile": "./selectedTxs_300K.csv",
+  "DatasetFile": "./23000000to23249999_BlockTransaction.csv",
   "ReconfigTimeGap": 50,
 
   "Delay": -1,
   "JitterRange": -1,
   "Bandwidth":10000000,
 
-  "EnableJustitia": 1,
+  "EnableJustitia": 0,
+  "JustitiaSubsidyMode": 1,
+  "JustitiaWindowBlocks": 16,
+  "JustitiaGammaMin": 0,
+  "JustitiaGammaMax": 0,
   "JustitiaRewardBase": 1000.0
 }
