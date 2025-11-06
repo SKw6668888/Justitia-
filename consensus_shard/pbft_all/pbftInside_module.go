@@ -3,12 +3,14 @@ package pbft_all
 
 import (
 	"blockEmulator/core"
+	"blockEmulator/fees"
 	"blockEmulator/message"
 	"blockEmulator/networks"
 	"blockEmulator/params"
 	"encoding/json"
 	"fmt"
 	"log"
+	"math/big"
 	"strconv"
 	"time"
 )
@@ -60,6 +62,11 @@ func (rphm *RawRelayPbftExtraHandleMod) HandleinCommit(cmsg *message.Commit) boo
 	rphm.pbftNode.CurChain.AddBlock(block)
 	rphm.pbftNode.pl.Plog.Printf("S%dN%d : added the block %d... \n", rphm.pbftNode.ShardID, rphm.pbftNode.NodeID, block.Header.Number)
 	rphm.pbftNode.CurChain.PrintBlockChain()
+
+	// Justitia: Update fee tracker with ITX fees from this block
+	if params.EnableJustitia == 1 {
+		rphm.updateFeeTracker(block)
+	}
 
 	// now try to relay txs to other shards (for main nodes)
 	if rphm.pbftNode.NodeID == uint64(rphm.pbftNode.view.Load()) {
@@ -188,4 +195,30 @@ func (rphm *RawRelayPbftExtraHandleMod) HandleforSequentialRequest(som *message.
 		rphm.pbftNode.CurChain.PrintBlockChain()
 	}
 	return true
+}
+
+// updateFeeTracker updates the global fee tracker with ITX fees from a finalized block
+func (rphm *RawRelayPbftExtraHandleMod) updateFeeTracker(block *core.Block) {
+	// Extract intra-shard transaction fees (ITX only, exclude CTX)
+	itxFees := make([]*big.Int, 0)
+	
+	for _, tx := range block.Body {
+		// Only count transactions that are NOT cross-shard (ITX)
+		// and are NOT relay transactions (first phase only)
+		if !tx.IsCrossShard && !tx.Relayed {
+			if tx.FeeToProposer != nil && tx.FeeToProposer.Sign() > 0 {
+				itxFees = append(itxFees, tx.FeeToProposer)
+			}
+		}
+	}
+	
+	// Update the global fee tracker
+	if len(itxFees) > 0 {
+		feeTracker := fees.GetGlobalTracker()
+		feeTracker.OnBlockFinalized(int(rphm.pbftNode.ShardID), itxFees)
+		
+		// Log for debugging
+		rphm.pbftNode.pl.Plog.Printf("S%dN%d : Updated fee tracker with %d ITX fees for block %d\n", 
+			rphm.pbftNode.ShardID, rphm.pbftNode.NodeID, len(itxFees), block.Header.Number)
+	}
 }

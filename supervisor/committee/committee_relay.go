@@ -82,6 +82,25 @@ func (rthm *RelayCommitteeModule) txSending(txlist []*core.Transaction) {
 		}
 		tx := txlist[idx]
 		sendersid := uint64(utils.Addr2Shard(tx.Sender))
+		recipientsid := uint64(utils.Addr2Shard(tx.Recipient))
+		
+		// Justitia: Set shard information for cross-shard transaction detection
+		tx.FromShard = int(sendersid)
+		tx.ToShard = int(recipientsid)
+		tx.IsCrossShard = (sendersid != recipientsid)
+		tx.PairID = string(tx.TxHash)
+		
+		// Set fee (default if not already set from CSV)
+		if tx.FeeToProposer == nil || tx.FeeToProposer.Sign() == 0 {
+			// Default fee: 1 Gwei (reasonable for Ethereum transactions)
+			tx.FeeToProposer = big.NewInt(1_000_000_000) // 1 Gwei
+		}
+		
+		// Set arrival time for latency tracking
+		if tx.ArrivalTime.IsZero() {
+			tx.ArrivalTime = time.Now()
+		}
+		
 		sendToShard[sendersid] = append(sendToShard[sendersid], tx)
 	}
 }

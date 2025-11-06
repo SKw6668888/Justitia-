@@ -5,8 +5,11 @@ package chain
 
 import (
 	"blockEmulator/core"
+	"blockEmulator/fees"
+	"blockEmulator/incentive/justitia"
 	"blockEmulator/params"
 	"blockEmulator/storage"
+	"blockEmulator/txpool/scheduler"
 	"blockEmulator/utils"
 	"bytes"
 	"errors"
@@ -256,9 +259,26 @@ func NewBlockChain(cc *params.ChainConfig, db ethdb.Database) (*BlockChain, erro
 	// Choose transaction pool implementation based on Justitia parameter
 	var txpool core.TxPoolInterface
 	if params.EnableJustitia == 1 {
-		txpool = core.NewPriorityTxPool()
-		fmt.Printf("S%dN%d: Using PriorityTxPool (Justitia enabled with R=%.2f)\n", 
-			cc.ShardID, cc.NodeID, params.JustitiaRewardBase)
+		// Create PriorityTxPool
+		priorityPool := core.NewPriorityTxPool()
+		
+		// Get global fee tracker
+		feeTracker := fees.GetGlobalTracker()
+		
+		// Create Justitia scheduler
+		sched := scheduler.NewScheduler(
+			int(cc.ShardID),
+			params.ShardNum,
+			feeTracker,
+			justitia.SubsidyMode(params.JustitiaSubsidyMode),
+		)
+		
+		// Set scheduler to txpool (uses interface to avoid circular dependency)
+		priorityPool.SetScheduler(sched, int(cc.ShardID))
+		
+		txpool = priorityPool
+		fmt.Printf("S%dN%d: Using PriorityTxPool with Justitia Scheduler (mode=%d, window=%d)\n", 
+			cc.ShardID, cc.NodeID, params.JustitiaSubsidyMode, params.JustitiaWindowBlocks)
 	} else {
 		txpool = core.NewTxPool()
 		fmt.Printf("S%dN%d: Using standard TxPool (FIFO)\n", cc.ShardID, cc.NodeID)

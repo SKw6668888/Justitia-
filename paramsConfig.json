@@ -12,8 +12,8 @@
   "UseBlocksizeInBytes": 0,
 
   "InjectSpeed": 2000,
-  "TotalDataSize": 160000,
-  "TxBatchSize": 16000,
+  "TotalDataSize": 250000,
+  "TxBatchSize": 25000,
 
   "BrokerNum": 10,
   "RelayWithMerkleProof": 0,
@@ -26,7 +26,7 @@
   "Bandwidth":10000000,
 
   "EnableJustitia": 1,
-  "JustitiaSubsidyMode": 1,
+  "JustitiaSubsidyMode": 2,
   "JustitiaWindowBlocks": 16,
   "JustitiaGammaMin": 0,
   "JustitiaGammaMax": 0,

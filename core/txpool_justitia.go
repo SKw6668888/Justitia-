@@ -4,9 +4,16 @@ package core
 import (
 	"blockEmulator/utils"
 	"container/heap"
+	"math/big"
 	"sync"
 	"time"
 )
+
+// TxScheduler is an interface for transaction selection algorithms
+// This avoids circular dependency with txpool/scheduler package
+type TxScheduler interface {
+	SelectForBlock(capacity int, txPool []*Transaction) []*Transaction
+}
 
 // PriorityTxPool implements a transaction pool with Justitia incentive mechanism
 // Cross-shard transactions with rewards are prioritized
@@ -14,6 +21,10 @@ type PriorityTxPool struct {
 	TxQueue   *TxPriorityQueue          // priority queue for transactions
 	RelayPool map[uint64][]*Transaction // designed for sharded blockchain, from Monoxide
 	lock      sync.Mutex
+	
+	// Justitia components (using interface to avoid circular dependency)
+	scheduler TxScheduler // Justitia scheduler for transaction selection
+	shardID   int         // Current shard ID
 }
 
 // TxPriorityQueue implements heap.Interface for transaction prioritization
@@ -22,35 +33,31 @@ type TxPriorityQueue []*Transaction
 func (pq TxPriorityQueue) Len() int { return len(pq) }
 
 func (pq TxPriorityQueue) Less(i, j int) bool {
-	// Higher priority if:
-	// 1. Cross-shard transaction with Justitia subsidy
-	// 2. Higher subsidy/utility value
-	// 3. Earlier timestamp (FIFO for same priority)
-
+	// Priority based on FeeToProposer (base fee paid by user)
+	// This provides a fair baseline before Justitia scheduler applies utility-based selection
+	// 
+	// Note: When Justitia scheduler is active, packTxsWithScheduler will further refine
+	// selection based on computed utilities (uA, uB) from Shapley value allocation
+	
 	txI, txJ := pq[i], pq[j]
-
-	// Helper function to check if subsidy is positive
-	hasSubsidy := func(tx *Transaction) bool {
-		return tx.SubsidyR != nil && tx.SubsidyR.Sign() > 0
+	
+	// Compare base fees (higher fee = higher priority)
+	feeI := txI.FeeToProposer
+	feeJ := txJ.FeeToProposer
+	
+	if feeI == nil {
+		feeI = big.NewInt(0)
 	}
-
-	// If one is cross-shard with subsidy and the other is not, prioritize the cross-shard
-	if txI.IsCrossShard && hasSubsidy(txI) && (!txJ.IsCrossShard || !hasSubsidy(txJ)) {
-		return true
+	if feeJ == nil {
+		feeJ = big.NewInt(0)
 	}
-	if txJ.IsCrossShard && hasSubsidy(txJ) && (!txI.IsCrossShard || !hasSubsidy(txI)) {
-		return false
+	
+	cmp := feeI.Cmp(feeJ)
+	if cmp != 0 {
+		return cmp > 0 // Higher fee = higher priority
 	}
-
-	// Both are cross-shard with subsidies, compare subsidy values
-	if txI.IsCrossShard && txJ.IsCrossShard && txI.SubsidyR != nil && txJ.SubsidyR != nil {
-		cmp := txI.SubsidyR.Cmp(txJ.SubsidyR)
-		if cmp != 0 {
-			return cmp > 0 // Higher subsidy = higher priority
-		}
-	}
-
-	// Same priority level, use FIFO (earlier time has higher priority)
+	
+	// If fees are equal, use FIFO (earlier timestamp = higher priority)
 	return txI.Time.Before(txJ.Time)
 }
 
@@ -79,7 +86,18 @@ func NewPriorityTxPool() *PriorityTxPool {
 	return &PriorityTxPool{
 		TxQueue:   &pq,
 		RelayPool: make(map[uint64][]*Transaction),
+		scheduler: nil, // Will be set via SetScheduler
+		shardID:   -1,
 	}
+}
+
+// SetScheduler sets the Justitia scheduler for this pool
+// scheduler must implement TxScheduler interface
+func (txpool *PriorityTxPool) SetScheduler(sched TxScheduler, shardID int) {
+	txpool.lock.Lock()
+	defer txpool.lock.Unlock()
+	txpool.scheduler = sched
+	txpool.shardID = shardID
 }
 
 // AddTx2Pool adds a transaction to the priority pool
@@ -112,9 +130,54 @@ func (txpool *PriorityTxPool) AddTxs2Pool(txs []*Transaction) {
 	}
 }
 
-// PackTxs packs transactions from the priority queue
-// Transactions are automatically sorted by priority (cross-shard with rewards first)
+// PackTxs packs transactions from the priority queue using Justitia scheduler
+// Transactions are selected based on Justitia incentive mechanism (Case1/Case2/Case3)
 func (txpool *PriorityTxPool) PackTxs(max_txs uint64) []*Transaction {
+	// If scheduler is available, use intelligent selection
+	if txpool.scheduler != nil {
+		return txpool.packTxsWithScheduler(max_txs)
+	}
+	
+	// Otherwise use simple priority queue (backward compatibility)
+	return txpool.packTxsSimple(max_txs)
+}
+
+// packTxsWithScheduler uses Justitia scheduler for transaction selection
+func (txpool *PriorityTxPool) packTxsWithScheduler(max_txs uint64) []*Transaction {
+	txpool.lock.Lock()
+	
+	// Extract all available transactions from priority queue
+	allTxs := make([]*Transaction, 0, txpool.TxQueue.Len())
+	for txpool.TxQueue.Len() > 0 {
+		tx := heap.Pop(txpool.TxQueue).(*Transaction)
+		allTxs = append(allTxs, tx)
+	}
+	
+	txpool.lock.Unlock()
+	
+	// Use Justitia scheduler to select transactions intelligently
+	// This handles Case1/Case2/Case3 classification and prioritization
+	selected := txpool.scheduler.SelectForBlock(int(max_txs), allTxs)
+	
+	// Put unselected transactions back into the priority queue
+	txpool.lock.Lock()
+	selectedMap := make(map[string]bool)
+	for _, tx := range selected {
+		selectedMap[string(tx.TxHash)] = true
+	}
+	
+	for _, tx := range allTxs {
+		if !selectedMap[string(tx.TxHash)] {
+			heap.Push(txpool.TxQueue, tx)
+		}
+	}
+	txpool.lock.Unlock()
+	
+	return selected
+}
+
+// packTxsSimple uses simple priority queue without Justitia scheduler
+func (txpool *PriorityTxPool) packTxsSimple(max_txs uint64) []*Transaction {
 	txpool.lock.Lock()
 	defer txpool.lock.Unlock()
 
