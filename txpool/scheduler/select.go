@@ -5,38 +5,39 @@ import (
 	"blockEmulator/core"
 	"blockEmulator/fees/expectation"
 	"blockEmulator/incentive/justitia"
+	"math/big"
 	"sort"
 )
 
 // TxWithScore wraps a transaction with its computed score for selection
 type TxWithScore struct {
 	Tx    *core.Transaction
-	Score uint64
+	Score *big.Int
 	Case  justitia.Case // Only relevant for CTX
 }
 
 // Scheduler handles transaction selection using Justitia incentive mechanism
 type Scheduler struct {
-	ShardID      int
-	NumShards    int
-	FeeTracker   *expectation.Tracker
-	SubsidyMode  justitia.SubsidyMode
-	CustomSubsidy func(uint64, uint64) uint64
+	ShardID       int
+	NumShards     int
+	FeeTracker    *expectation.Tracker
+	SubsidyMode   justitia.SubsidyMode
+	CustomSubsidy func(*big.Int, *big.Int) *big.Int
 }
 
 // NewScheduler creates a new Justitia-based transaction scheduler
 func NewScheduler(shardID, numShards int, feeTracker *expectation.Tracker, mode justitia.SubsidyMode) *Scheduler {
 	return &Scheduler{
-		ShardID:      shardID,
-		NumShards:    numShards,
-		FeeTracker:   feeTracker,
-		SubsidyMode:  mode,
+		ShardID:       shardID,
+		NumShards:     numShards,
+		FeeTracker:    feeTracker,
+		SubsidyMode:   mode,
 		CustomSubsidy: nil,
 	}
 }
 
 // SetCustomSubsidy sets a custom subsidy function
-func (s *Scheduler) SetCustomSubsidy(f func(uint64, uint64) uint64) {
+func (s *Scheduler) SetCustomSubsidy(f func(*big.Int, *big.Int) *big.Int) {
 	s.CustomSubsidy = f
 }
 
@@ -54,7 +55,7 @@ func (s *Scheduler) SelectForBlock(capacity int, txPool []*core.Transaction) []*
 
 	// Compute scores for all transactions
 	scored := make([]TxWithScore, 0, len(txPool))
-	
+
 	for _, tx := range txPool {
 		if tx.IsCrossShard {
 			// Cross-shard transaction (CTX)
@@ -66,10 +67,15 @@ func (s *Scheduler) SelectForBlock(capacity int, txPool []*core.Transaction) []*
 			})
 		} else {
 			// Intra-shard transaction (ITX)
+			// Ensure FeeToProposer is not nil
+			fee := tx.FeeToProposer
+			if fee == nil {
+				fee = big.NewInt(0)
+			}
 			scored = append(scored, TxWithScore{
 				Tx:    tx,
-				Score: tx.FeeToProposer, // ITX score = fee
-				Case:  0,                 // Not applicable for ITX
+				Score: new(big.Int).Set(fee), // ITX score = fee
+				Case:  0,                      // Not applicable for ITX
 			})
 		}
 	}
@@ -79,7 +85,7 @@ func (s *Scheduler) SelectForBlock(capacity int, txPool []*core.Transaction) []*
 	// - CTX in Case1 (uA >= EA)
 	phase1 := make([]TxWithScore, 0)
 	phase2 := make([]TxWithScore, 0) // For remaining ITX and Case3 CTX
-	excluded := 0 // Case2 CTX are excluded
+	excluded := 0                     // Case2 CTX are excluded
 
 	for _, scored := range scored {
 		if scored.Tx.IsCrossShard {
@@ -95,7 +101,7 @@ func (s *Scheduler) SelectForBlock(capacity int, txPool []*core.Transaction) []*
 			}
 		} else {
 			// ITX
-			if scored.Score >= EA {
+			if scored.Score.Cmp(EA) >= 0 {
 				phase1 = append(phase1, scored)
 			} else {
 				phase2 = append(phase2, scored)
@@ -105,8 +111,9 @@ func (s *Scheduler) SelectForBlock(capacity int, txPool []*core.Transaction) []*
 
 	// Sort Phase1 by descending score (highest score first)
 	sort.Slice(phase1, func(i, j int) bool {
-		if phase1[i].Score != phase1[j].Score {
-			return phase1[i].Score > phase1[j].Score
+		cmp := phase1[i].Score.Cmp(phase1[j].Score)
+		if cmp != 0 {
+			return cmp > 0 // Descending order
 		}
 		// Tie-breaker: FIFO (earlier arrival time)
 		return phase1[i].Tx.ArrivalTime.Before(phase1[j].Tx.ArrivalTime)
@@ -125,8 +132,9 @@ func (s *Scheduler) SelectForBlock(capacity int, txPool []*core.Transaction) []*
 	if len(selected) < capacity {
 		// Sort Phase2 by descending score
 		sort.Slice(phase2, func(i, j int) bool {
-			if phase2[i].Score != phase2[j].Score {
-				return phase2[i].Score > phase2[j].Score
+			cmp := phase2[i].Score.Cmp(phase2[j].Score)
+			if cmp != 0 {
+				return cmp > 0 // Descending order
 			}
 			return phase2[i].Tx.ArrivalTime.Before(phase2[j].Tx.ArrivalTime)
 		})
@@ -144,12 +152,12 @@ func (s *Scheduler) SelectForBlock(capacity int, txPool []*core.Transaction) []*
 
 // scoreCTX computes the score and case classification for a cross-shard transaction
 // from the perspective of the current shard
-func (s *Scheduler) scoreCTX(tx *core.Transaction, EA uint64) (score uint64, txCase justitia.Case) {
+func (s *Scheduler) scoreCTX(tx *core.Transaction, EA *big.Int) (score *big.Int, txCase justitia.Case) {
 	// Determine if this shard is source (A) or destination (B)
 	isSourceShard := (tx.FromShard == s.ShardID)
-	
+
 	// Get average fees for both shards
-	var EB uint64
+	var EB *big.Int
 	if isSourceShard {
 		// This is shard A (source), get EB from destination shard
 		EB = s.FeeTracker.GetAvgITXFee(tx.ToShard)
@@ -159,23 +167,27 @@ func (s *Scheduler) scoreCTX(tx *core.Transaction, EA uint64) (score uint64, txC
 		EB = s.FeeTracker.GetAvgITXFee(s.ShardID) // Local shard is B
 	}
 
-	// Compute subsidy R_AB
+	// Compute subsidy R_AB (CRITICAL: This NEVER uses tx.FeeToProposer)
 	R := justitia.RAB(s.SubsidyMode, EA, EB, s.CustomSubsidy)
-	
-	// Update transaction with subsidy (if not already set)
-	if tx.SubsidyR == 0 {
-		tx.SubsidyR = R
+
+	// Always update transaction with subsidy (scheduler is authoritative)
+	tx.SubsidyR = new(big.Int).Set(R)
+
+	// Ensure FeeToProposer is not nil
+	fee := tx.FeeToProposer
+	if fee == nil {
+		fee = big.NewInt(0)
 	}
 
 	// Compute Shapley split
-	uA, uB := justitia.Split2(tx.FeeToProposer, R, EA, EB)
-	
+	uA, uB := justitia.Split2(fee, R, EA, EB)
+
 	// Update transaction utilities
-	tx.UtilityA = uA
-	tx.UtilityB = uB
+	tx.UtilityA = new(big.Int).Set(uA)
+	tx.UtilityB = new(big.Int).Set(uB)
 
 	// Determine score based on which shard we are
-	var utility uint64
+	var utility *big.Int
 	if isSourceShard {
 		utility = uA
 		// Classify from source shard perspective
@@ -191,23 +203,26 @@ func (s *Scheduler) scoreCTX(tx *core.Transaction, EA uint64) (score uint64, txC
 		}
 	}
 
-	return utility, txCase
+	return new(big.Int).Set(utility), txCase
 }
 
 // EstimateBlockReward estimates the total reward for proposing a block with given transactions
-func (s *Scheduler) EstimateBlockReward(txs []*core.Transaction) uint64 {
-	var totalReward uint64
-	
+func (s *Scheduler) EstimateBlockReward(txs []*core.Transaction) *big.Int {
+	totalReward := big.NewInt(0)
+
 	for _, tx := range txs {
 		if tx.FromShard == s.ShardID {
 			// Source shard: get uA
-			totalReward += tx.UtilityA
+			if tx.UtilityA != nil {
+				totalReward.Add(totalReward, tx.UtilityA)
+			}
 		} else if tx.ToShard == s.ShardID {
 			// Destination shard: get uB
-			totalReward += tx.UtilityB
+			if tx.UtilityB != nil {
+				totalReward.Add(totalReward, tx.UtilityB)
+			}
 		}
 	}
-	
+
 	return totalReward
 }
-

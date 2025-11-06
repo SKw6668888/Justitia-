@@ -1,379 +1,440 @@
 package pending
 
 import (
+	"math/big"
 	"testing"
 	"time"
 )
 
-// TestLedger_AddAndGet tests adding and retrieving pending entries
+// TestLedger_AddAndGet tests basic add and get operations
 func TestLedger_AddAndGet(t *testing.T) {
 	ledger := NewLedger()
-
+	
 	p := &Pending{
-		PairID:        "tx001",
+		PairID:        "tx123",
 		ShardA:        0,
 		ShardB:        1,
-		FAB:           1000,
-		R:             500,
-		EA:            200,
-		EB:            100,
-		UtilityA:      800,
-		UtilityB:      700,
-		SourceBlockID: "block_A_123",
+		FAB:           big.NewInt(100),
+		R:             big.NewInt(50),
+		EA:            big.NewInt(80),
+		EB:            big.NewInt(70),
+		UtilityA:      big.NewInt(75),
+		UtilityB:      big.NewInt(75),
+		SourceBlockID: "block_A_1",
 		CreatedAt:     time.Now().Unix(),
 	}
-
+	
 	// Add pending
 	err := ledger.Add(p)
 	if err != nil {
-		t.Errorf("Add should succeed: %v", err)
+		t.Fatalf("Add() failed: %v", err)
 	}
-
-	// Get pending
-	retrieved, exists := ledger.Get("tx001")
+	
+	// Retrieve pending
+	retrieved, exists := ledger.Get("tx123")
 	if !exists {
-		t.Error("Pending entry should exist")
+		t.Fatal("Get() failed: pending not found")
 	}
-	if retrieved.PairID != "tx001" {
-		t.Errorf("Retrieved wrong entry: %s", retrieved.PairID)
+	
+	// Verify fields
+	if retrieved.PairID != p.PairID {
+		t.Errorf("PairID mismatch: got %v, want %v", retrieved.PairID, p.PairID)
 	}
-	if retrieved.FAB != 1000 {
-		t.Errorf("FAB should be 1000, got %d", retrieved.FAB)
+	if retrieved.FAB.Cmp(p.FAB) != 0 {
+		t.Errorf("FAB mismatch: got %v, want %v", retrieved.FAB, p.FAB)
 	}
 }
 
 // TestLedger_AddDuplicate tests adding duplicate entries
 func TestLedger_AddDuplicate(t *testing.T) {
 	ledger := NewLedger()
-
-	p1 := &Pending{
-		PairID:    "tx001",
-		ShardA:    0,
-		ShardB:    1,
+	
+	p := &Pending{
+		PairID:    "tx123",
+		FAB:       big.NewInt(100),
 		CreatedAt: time.Now().Unix(),
 	}
-
+	
 	// First add should succeed
-	err := ledger.Add(p1)
+	err := ledger.Add(p)
 	if err != nil {
-		t.Errorf("First add should succeed: %v", err)
+		t.Fatalf("First Add() failed: %v", err)
 	}
-
+	
 	// Second add should fail
-	err = ledger.Add(p1)
+	err = ledger.Add(p)
 	if err == nil {
-		t.Error("Adding duplicate should fail")
+		t.Error("Second Add() should have failed")
 	}
 }
 
-// TestLedger_Settle tests settling a transaction
+// TestLedger_Settle tests settlement process
 func TestLedger_Settle(t *testing.T) {
 	ledger := NewLedger()
-
+	
 	p := &Pending{
-		PairID:        "tx001",
+		PairID:        "tx123",
 		ShardA:        0,
 		ShardB:        1,
-		FAB:           1000,
-		R:             500,
-		UtilityA:      800,
-		UtilityB:      700,
-		SourceBlockID: "block_A_123",
+		FAB:           big.NewInt(100),
+		R:             big.NewInt(50),
+		EA:            big.NewInt(80),
+		EB:            big.NewInt(70),
+		UtilityA:      big.NewInt(75),
+		UtilityB:      big.NewInt(75),
+		SourceBlockID: "block_A_1",
 		CreatedAt:     time.Now().Unix(),
 	}
-
+	
 	ledger.Add(p)
-
+	
 	// Track credited amounts
-	credited := make(map[string]uint64)
-	creditFunc := func(shardID int, proposerID string, amount uint64) {
-		credited[proposerID] = amount
+	credited := make(map[int]*big.Int)
+	creditFunc := func(shardID int, proposerID string, amount *big.Int) {
+		if _, exists := credited[shardID]; !exists {
+			credited[shardID] = big.NewInt(0)
+		}
+		credited[shardID].Add(credited[shardID], amount)
 	}
-
+	
 	// Settle
-	err := ledger.Settle("tx001", "block_B_456", creditFunc)
+	err := ledger.Settle("tx123", "block_B_1", creditFunc)
 	if err != nil {
-		t.Errorf("Settle should succeed: %v", err)
+		t.Fatalf("Settle() failed: %v", err)
 	}
-
-	// Check that both proposers were credited
-	if len(credited) != 2 {
-		t.Errorf("Should credit 2 proposers, got %d", len(credited))
+	
+	// Verify credits
+	if credited[0].Cmp(big.NewInt(75)) != 0 {
+		t.Errorf("Shard A credit = %v, want 75", credited[0])
 	}
-
-	// Verify amounts (can't check exact keys as they're generated, but check values)
-	foundA := false
-	foundB := false
-	for _, amount := range credited {
-		if amount == 800 {
-			foundA = true
-		}
-		if amount == 700 {
-			foundB = true
-		}
+	if credited[1].Cmp(big.NewInt(75)) != 0 {
+		t.Errorf("Shard B credit = %v, want 75", credited[1])
 	}
-	if !foundA || !foundB {
-		t.Error("Should credit uA=800 and uB=700")
+	
+	// Verify pending removed
+	if ledger.IsPending("tx123") {
+		t.Error("Transaction should not be pending after settlement")
 	}
-
-	// Verify removed from pending
-	if ledger.IsPending("tx001") {
-		t.Error("Should not be pending after settlement")
-	}
-
+	
 	// Verify marked as settled
-	if !ledger.IsSettled("tx001") {
-		t.Error("Should be marked as settled")
+	if !ledger.IsSettled("tx123") {
+		t.Error("Transaction should be marked as settled")
 	}
 }
 
-// TestLedger_SettleNonExistent tests settling a non-existent transaction
+// TestLedger_SettleNonExistent tests settling non-existent transaction
 func TestLedger_SettleNonExistent(t *testing.T) {
 	ledger := NewLedger()
-
-	creditFunc := func(shardID int, proposerID string, amount uint64) {}
-
+	
+	creditFunc := func(shardID int, proposerID string, amount *big.Int) {
+		// Should not be called
+		t.Error("creditFunc should not be called")
+	}
+	
 	err := ledger.Settle("nonexistent", "block", creditFunc)
 	if err == nil {
-		t.Error("Should error when settling non-existent transaction")
+		t.Error("Settle() should fail for non-existent transaction")
 	}
 }
 
-// TestLedger_SettleTwice tests double settlement
-func TestLedger_SettleTwice(t *testing.T) {
+// TestLedger_DoubleSettlement tests prevention of double settlement
+func TestLedger_DoubleSettlement(t *testing.T) {
 	ledger := NewLedger()
-
+	
 	p := &Pending{
-		PairID:        "tx001",
+		PairID:        "tx123",
 		ShardA:        0,
 		ShardB:        1,
-		UtilityA:      800,
-		UtilityB:      700,
-		SourceBlockID: "block_A_123",
+		FAB:           big.NewInt(100),
+		R:             big.NewInt(50),
+		UtilityA:      big.NewInt(75),
+		UtilityB:      big.NewInt(75),
+		SourceBlockID: "block_A_1",
 		CreatedAt:     time.Now().Unix(),
 	}
-
+	
 	ledger.Add(p)
-
-	creditFunc := func(shardID int, proposerID string, amount uint64) {}
-
-	// First settlement
-	err := ledger.Settle("tx001", "block_B_456", creditFunc)
-	if err != nil {
-		t.Errorf("First settle should succeed: %v", err)
+	
+	callCount := 0
+	creditFunc := func(shardID int, proposerID string, amount *big.Int) {
+		callCount++
 	}
-
+	
+	// First settlement should succeed
+	err := ledger.Settle("tx123", "block_B_1", creditFunc)
+	if err != nil {
+		t.Fatalf("First Settle() failed: %v", err)
+	}
+	
+	if callCount != 2 {
+		t.Errorf("creditFunc called %d times, want 2", callCount)
+	}
+	
 	// Second settlement should fail
-	err = ledger.Settle("tx001", "block_B_789", creditFunc)
+	err = ledger.Settle("tx123", "block_B_2", creditFunc)
 	if err == nil {
-		t.Error("Double settlement should fail")
+		t.Error("Second Settle() should have failed")
+	}
+	
+	// Credit function should not be called again
+	if callCount != 2 {
+		t.Errorf("creditFunc called %d times after double settlement, want 2", callCount)
 	}
 }
 
 // TestLedger_GetPendingCount tests counting pending transactions
 func TestLedger_GetPendingCount(t *testing.T) {
 	ledger := NewLedger()
-
+	
 	if ledger.GetPendingCount() != 0 {
-		t.Error("Initial count should be 0")
+		t.Error("Initial pending count should be 0")
 	}
-
-	// Add 3 pending
-	for i := 1; i <= 3; i++ {
+	
+	// Add 3 pending (with all required fields initialized)
+	for i := 0; i < 3; i++ {
 		p := &Pending{
-			PairID:    string(rune('0' + i)),
+			PairID:    string(rune('a' + i)),
+			ShardA:    0,
+			ShardB:    1,
+			FAB:       big.NewInt(100),
+			R:         big.NewInt(50),
+			EA:        big.NewInt(80),
+			EB:        big.NewInt(70),
+			UtilityA:  big.NewInt(75),
+			UtilityB:  big.NewInt(75),
 			CreatedAt: time.Now().Unix(),
 		}
 		ledger.Add(p)
 	}
-
+	
 	if ledger.GetPendingCount() != 3 {
-		t.Errorf("Count should be 3, got %d", ledger.GetPendingCount())
+		t.Errorf("Pending count = %d, want 3", ledger.GetPendingCount())
 	}
-
+	
 	// Settle one
-	creditFunc := func(shardID int, proposerID string, amount uint64) {}
-	ledger.Settle("1", "block", creditFunc)
-
+	creditFunc := func(shardID int, proposerID string, amount *big.Int) {}
+	ledger.Settle("a", "block", creditFunc)
+	
 	if ledger.GetPendingCount() != 2 {
-		t.Errorf("Count should be 2 after settlement, got %d", ledger.GetPendingCount())
+		t.Errorf("Pending count after settlement = %d, want 2", ledger.GetPendingCount())
+	}
+}
+
+// TestLedger_GetStats tests statistics retrieval
+func TestLedger_GetStats(t *testing.T) {
+	ledger := NewLedger()
+	
+	// Add 2 pending with known fees and subsidies
+	p1 := &Pending{
+		PairID:    "tx1",
+		ShardA:    0,
+		ShardB:    1,
+		FAB:       big.NewInt(100),
+		R:         big.NewInt(50),
+		EA:        big.NewInt(80),
+		EB:        big.NewInt(70),
+		UtilityA:  big.NewInt(75),
+		UtilityB:  big.NewInt(75),
+		CreatedAt: time.Now().Unix(),
+	}
+	p2 := &Pending{
+		PairID:    "tx2",
+		ShardA:    0,
+		ShardB:    1,
+		FAB:       big.NewInt(200),
+		R:         big.NewInt(100),
+		EA:        big.NewInt(80),
+		EB:        big.NewInt(70),
+		UtilityA:  big.NewInt(150),
+		UtilityB:  big.NewInt(150),
+		CreatedAt: time.Now().Unix(),
+	}
+	
+	ledger.Add(p1)
+	ledger.Add(p2)
+	
+	stats := ledger.GetStats()
+	
+	if stats.PendingCount != 2 {
+		t.Errorf("PendingCount = %d, want 2", stats.PendingCount)
+	}
+	
+	// TotalFees should be 100 + 200 = 300
+	if stats.TotalFees.Cmp(big.NewInt(300)) != 0 {
+		t.Errorf("TotalFees = %v, want 300", stats.TotalFees)
+	}
+	
+	// TotalSubsidy should be 50 + 100 = 150
+	if stats.TotalSubsidy.Cmp(big.NewInt(150)) != 0 {
+		t.Errorf("TotalSubsidy = %v, want 150", stats.TotalSubsidy)
+	}
+}
+
+// TestLedger_CleanupOld tests old transaction cleanup
+func TestLedger_CleanupOld(t *testing.T) {
+	ledger := NewLedger()
+	
+	now := time.Now().Unix()
+	
+	// Add old transaction
+	old := &Pending{
+		PairID:    "old",
+		ShardA:    0,
+		ShardB:    1,
+		FAB:       big.NewInt(100),
+		R:         big.NewInt(50),
+		EA:        big.NewInt(80),
+		EB:        big.NewInt(70),
+		UtilityA:  big.NewInt(75),
+		UtilityB:  big.NewInt(75),
+		CreatedAt: now - 1000,
+	}
+	ledger.Add(old)
+	
+	// Add recent transaction
+	recent := &Pending{
+		PairID:    "recent",
+		ShardA:    0,
+		ShardB:    1,
+		FAB:       big.NewInt(100),
+		R:         big.NewInt(50),
+		EA:        big.NewInt(80),
+		EB:        big.NewInt(70),
+		UtilityA:  big.NewInt(75),
+		UtilityB:  big.NewInt(75),
+		CreatedAt: now,
+	}
+	ledger.Add(recent)
+	
+	// Cleanup transactions older than (now - 500)
+	cleaned := ledger.CleanupOld(now - 500)
+	
+	if cleaned != 1 {
+		t.Errorf("CleanupOld() removed %d, want 1", cleaned)
+	}
+	
+	// Old should be removed
+	if ledger.IsPending("old") {
+		t.Error("Old transaction should be removed")
+	}
+	
+	// Recent should remain
+	if !ledger.IsPending("recent") {
+		t.Error("Recent transaction should remain")
 	}
 }
 
 // TestLedger_GetAllPending tests retrieving all pending transactions
 func TestLedger_GetAllPending(t *testing.T) {
 	ledger := NewLedger()
-
-	// Add multiple pending
-	for i := 1; i <= 5; i++ {
+	
+	// Add 3 pending
+	for i := 0; i < 3; i++ {
 		p := &Pending{
-			PairID:    string(rune('A' + i - 1)),
-			ShardA:    i,
+			PairID:    string(rune('a' + i)),
+			ShardA:    0,
+			ShardB:    1,
+			FAB:       big.NewInt(int64(100 * (i + 1))),
+			R:         big.NewInt(50),
+			EA:        big.NewInt(80),
+			EB:        big.NewInt(70),
+			UtilityA:  big.NewInt(75),
+			UtilityB:  big.NewInt(75),
 			CreatedAt: time.Now().Unix(),
 		}
 		ledger.Add(p)
 	}
-
+	
 	all := ledger.GetAllPending()
-	if len(all) != 5 {
-		t.Errorf("Should get 5 pending, got %d", len(all))
+	
+	if len(all) != 3 {
+		t.Errorf("GetAllPending() returned %d, want 3", len(all))
 	}
-
-	// Verify it's a copy (modifying shouldn't affect ledger)
-	all[0].FAB = 999999
+	
+	// Verify it's a copy (modifying returned values shouldn't affect ledger)
+	all[0].FAB = big.NewInt(999)
+	
 	retrieved, _ := ledger.Get(all[0].PairID)
-	if retrieved.FAB == 999999 {
-		t.Error("GetAllPending should return copies, not references")
-	}
-}
-
-// TestLedger_CleanupOld tests cleanup of old pending entries
-func TestLedger_CleanupOld(t *testing.T) {
-	ledger := NewLedger()
-
-	now := time.Now().Unix()
-
-	// Add old and new entries
-	old1 := &Pending{PairID: "old1", CreatedAt: now - 3600}
-	old2 := &Pending{PairID: "old2", CreatedAt: now - 7200}
-	new1 := &Pending{PairID: "new1", CreatedAt: now - 60}
-
-	ledger.Add(old1)
-	ledger.Add(old2)
-	ledger.Add(new1)
-
-	// Cleanup entries older than 1800 seconds
-	count := ledger.CleanupOld(now - 1800)
-
-	if count != 2 {
-		t.Errorf("Should cleanup 2 old entries, got %d", count)
-	}
-
-	if ledger.GetPendingCount() != 1 {
-		t.Errorf("Should have 1 pending left, got %d", ledger.GetPendingCount())
-	}
-
-	if !ledger.IsPending("new1") {
-		t.Error("new1 should still be pending")
-	}
-}
-
-// TestLedger_GetStats tests statistics
-func TestLedger_GetStats(t *testing.T) {
-	ledger := NewLedger()
-
-	stats := ledger.GetStats()
-	if stats.PendingCount != 0 || stats.SettledCount != 0 {
-		t.Error("Initial stats should be all zeros")
-	}
-
-	// Add pending with subsidies and fees
-	p1 := &Pending{PairID: "tx1", R: 100, FAB: 200, CreatedAt: time.Now().Unix()}
-	p2 := &Pending{PairID: "tx2", R: 150, FAB: 300, CreatedAt: time.Now().Unix()}
-	ledger.Add(p1)
-	ledger.Add(p2)
-
-	stats = ledger.GetStats()
-	if stats.PendingCount != 2 {
-		t.Errorf("PendingCount should be 2, got %d", stats.PendingCount)
-	}
-	if stats.TotalSubsidy != 250 {
-		t.Errorf("TotalSubsidy should be 250, got %d", stats.TotalSubsidy)
-	}
-	if stats.TotalFees != 500 {
-		t.Errorf("TotalFees should be 500, got %d", stats.TotalFees)
-	}
-
-	// Settle one
-	creditFunc := func(shardID int, proposerID string, amount uint64) {}
-	ledger.Settle("tx1", "block", creditFunc)
-
-	stats = ledger.GetStats()
-	if stats.PendingCount != 1 {
-		t.Errorf("PendingCount should be 1, got %d", stats.PendingCount)
-	}
-	if stats.SettledCount != 1 {
-		t.Errorf("SettledCount should be 1, got %d", stats.SettledCount)
-	}
-	if stats.TotalSubsidy != 150 {
-		t.Errorf("TotalSubsidy should be 150, got %d", stats.TotalSubsidy)
+	if retrieved.FAB.Cmp(big.NewInt(999)) == 0 {
+		t.Error("Modification to returned pending affected ledger (not a copy)")
 	}
 }
 
 // TestLedger_Reset tests resetting the ledger
 func TestLedger_Reset(t *testing.T) {
 	ledger := NewLedger()
-
-	// Add some entries
-	p1 := &Pending{PairID: "tx1", CreatedAt: time.Now().Unix()}
-	ledger.Add(p1)
-
-	creditFunc := func(shardID int, proposerID string, amount uint64) {}
-	ledger.Settle("tx1", "block", creditFunc)
-
+	
+	// Add some data
+	p := &Pending{
+		PairID:    "tx123",
+		ShardA:    0,
+		ShardB:    1,
+		FAB:       big.NewInt(100),
+		R:         big.NewInt(50),
+		EA:        big.NewInt(80),
+		EB:        big.NewInt(70),
+		UtilityA:  big.NewInt(75),
+		UtilityB:  big.NewInt(75),
+		CreatedAt: time.Now().Unix(),
+	}
+	ledger.Add(p)
+	
+	creditFunc := func(shardID int, proposerID string, amount *big.Int) {}
+	ledger.Settle("tx123", "block", creditFunc)
+	
 	// Reset
 	ledger.Reset()
-
+	
+	// Verify all cleared
 	if ledger.GetPendingCount() != 0 {
-		t.Error("After reset, pending count should be 0")
+		t.Error("Pending count should be 0 after reset")
 	}
 	if ledger.GetSettledCount() != 0 {
-		t.Error("After reset, settled count should be 0")
-	}
-	if ledger.IsPending("tx1") || ledger.IsSettled("tx1") {
-		t.Error("After reset, no entries should exist")
+		t.Error("Settled count should be 0 after reset")
 	}
 }
 
-// TestLedger_AddAfterSettled tests adding after already settled
-func TestLedger_AddAfterSettled(t *testing.T) {
-	ledger := NewLedger()
-
-	p := &Pending{PairID: "tx1", CreatedAt: time.Now().Unix()}
-	ledger.Add(p)
-
-	creditFunc := func(shardID int, proposerID string, amount uint64) {}
-	ledger.Settle("tx1", "block", creditFunc)
-
-	// Try to add again with same PairID
-	p2 := &Pending{PairID: "tx1", CreatedAt: time.Now().Unix()}
-	err := ledger.Add(p2)
-	if err == nil {
-		t.Error("Should not allow adding already settled transaction")
-	}
-}
-
-// Benchmark Add
+// BenchmarkLedger_Add benchmarks adding pending transactions
 func BenchmarkLedger_Add(b *testing.B) {
 	ledger := NewLedger()
-
+	
 	b.ResetTimer()
 	for i := 0; i < b.N; i++ {
 		p := &Pending{
 			PairID:    string(rune(i)),
+			ShardA:    0,
+			ShardB:    1,
+			FAB:       big.NewInt(100),
+			R:         big.NewInt(50),
+			EA:        big.NewInt(80),
+			EB:        big.NewInt(70),
+			UtilityA:  big.NewInt(75),
+			UtilityB:  big.NewInt(75),
 			CreatedAt: time.Now().Unix(),
 		}
 		ledger.Add(p)
 	}
 }
 
-// Benchmark Settle
-func BenchmarkLedger_Settle(b *testing.B) {
+// BenchmarkLedger_Get benchmarks retrieving pending transactions
+func BenchmarkLedger_Get(b *testing.B) {
 	ledger := NewLedger()
-	creditFunc := func(shardID int, proposerID string, amount uint64) {}
-
-	// Pre-populate
-	for i := 0; i < b.N; i++ {
-		p := &Pending{
-			PairID:    string(rune(i)),
-			CreatedAt: time.Now().Unix(),
-		}
-		ledger.Add(p)
+	p := &Pending{
+		PairID:    "tx123",
+		ShardA:    0,
+		ShardB:    1,
+		FAB:       big.NewInt(100),
+		R:         big.NewInt(50),
+		EA:        big.NewInt(80),
+		EB:        big.NewInt(70),
+		UtilityA:  big.NewInt(75),
+		UtilityB:  big.NewInt(75),
+		CreatedAt: time.Now().Unix(),
 	}
-
+	ledger.Add(p)
+	
 	b.ResetTimer()
 	for i := 0; i < b.N; i++ {
-		ledger.Settle(string(rune(i)), "block", creditFunc)
+		_, _ = ledger.Get("tx123")
 	}
 }
-

@@ -25,7 +25,7 @@
   "JitterRange": -1,
   "Bandwidth":10000000,
 
-  "EnableJustitia": 0,
+  "EnableJustitia": 1,
   "JustitiaSubsidyMode": 1,
   "JustitiaWindowBlocks": 16,
   "JustitiaGammaMin": 0,

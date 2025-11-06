@@ -37,14 +37,14 @@ type Transaction struct {
 	ToShard          int       // Destination shard ID (computed from recipient address)
 	IsCrossShard     bool      // Whether this is a cross-shard transaction
 	PairID           string    // Unique identifier for matching CTX and CTX' (typically TxHash as string)
-	FeeToProposer    uint64    // Fee that goes to proposer (f_AB for CTX, f for ITX)
+	FeeToProposer    *big.Int  // Fee that goes to proposer (f_AB for CTX, f for ITX)
 	ArrivalTime      time.Time // Time when tx arrived at mempool (for delay metrics)
 	TxSize           int       // Transaction size (default 1 for count-based capacity)
 	
 	// Cross-shard reward tracking
-	SubsidyR         uint64    // Subsidy R_AB for this CTX
-	UtilityA         uint64    // Utility uA for source shard proposer
-	UtilityB         uint64    // Utility uB for destination shard proposer
+	SubsidyR         *big.Int  // Subsidy R_AB for this CTX
+	UtilityA         *big.Int  // Utility uA for source shard proposer
+	UtilityB         *big.Int  // Utility uB for destination shard proposer
 	JustitiaCase     int       // Classification: 1=Case1, 2=Case2, 3=Case3 (0=not classified/ITX)
 	
 	// Relay tracking
@@ -115,13 +115,13 @@ func NewTransaction(sender, recipient string, value *big.Int, nonce uint64, prop
 	tx.ToShard = 0
 	tx.IsCrossShard = false
 	tx.PairID = ""
-	tx.FeeToProposer = 0
+	tx.FeeToProposer = big.NewInt(0)
 	tx.ArrivalTime = proposeTime
 	tx.TxSize = 1 // Default size = 1 for count-based capacity
 	
-	tx.SubsidyR = 0
-	tx.UtilityA = 0
-	tx.UtilityB = 0
+	tx.SubsidyR = big.NewInt(0)
+	tx.UtilityA = big.NewInt(0)
+	tx.UtilityB = big.NewInt(0)
 	tx.JustitiaCase = 0
 	
 	tx.IsRelay2 = false

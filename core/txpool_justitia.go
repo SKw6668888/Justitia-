@@ -29,17 +29,25 @@ func (pq TxPriorityQueue) Less(i, j int) bool {
 
 	txI, txJ := pq[i], pq[j]
 
+	// Helper function to check if subsidy is positive
+	hasSubsidy := func(tx *Transaction) bool {
+		return tx.SubsidyR != nil && tx.SubsidyR.Sign() > 0
+	}
+
 	// If one is cross-shard with subsidy and the other is not, prioritize the cross-shard
-	if txI.IsCrossShard && txI.SubsidyR > 0 && (!txJ.IsCrossShard || txJ.SubsidyR == 0) {
+	if txI.IsCrossShard && hasSubsidy(txI) && (!txJ.IsCrossShard || !hasSubsidy(txJ)) {
 		return true
 	}
-	if txJ.IsCrossShard && txJ.SubsidyR > 0 && (!txI.IsCrossShard || txI.SubsidyR == 0) {
+	if txJ.IsCrossShard && hasSubsidy(txJ) && (!txI.IsCrossShard || !hasSubsidy(txI)) {
 		return false
 	}
 
 	// Both are cross-shard with subsidies, compare subsidy values
-	if txI.IsCrossShard && txJ.IsCrossShard && txI.SubsidyR != txJ.SubsidyR {
-		return txI.SubsidyR > txJ.SubsidyR
+	if txI.IsCrossShard && txJ.IsCrossShard && txI.SubsidyR != nil && txJ.SubsidyR != nil {
+		cmp := txI.SubsidyR.Cmp(txJ.SubsidyR)
+		if cmp != 0 {
+			return cmp > 0 // Higher subsidy = higher priority
+		}
 	}
 
 	// Same priority level, use FIFO (earlier time has higher priority)

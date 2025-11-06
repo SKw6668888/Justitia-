@@ -3,6 +3,7 @@ package pending
 
 import (
 	"fmt"
+	"math/big"
 	"sync"
 )
 
@@ -10,17 +11,17 @@ import (
 // Created when source shard A includes CTX
 // Settled when destination shard B includes CTX'
 type Pending struct {
-	PairID        string // Unique identifier (typically TxHash)
-	ShardA        int    // Source shard
-	ShardB        int    // Destination shard
-	FAB           uint64 // Transaction fee f_AB
-	R             uint64 // Subsidy R_AB
-	EA            uint64 // E(f_A) at the time of CTX inclusion
-	EB            uint64 // E(f_B) at the time of CTX inclusion
-	UtilityA      uint64 // uA (computed at creation)
-	UtilityB      uint64 // uB (computed at creation)
-	SourceBlockID string // Block ID where CTX was included in shard A
-	CreatedAt     int64  // Timestamp of creation (for cleanup)
+	PairID        string   // Unique identifier (typically TxHash)
+	ShardA        int      // Source shard
+	ShardB        int      // Destination shard
+	FAB           *big.Int // Transaction fee f_AB
+	R             *big.Int // Subsidy R_AB
+	EA            *big.Int // E(f_A) at the time of CTX inclusion
+	EB            *big.Int // E(f_B) at the time of CTX inclusion
+	UtilityA      *big.Int // uA (computed at creation)
+	UtilityB      *big.Int // uB (computed at creation)
+	SourceBlockID string   // Block ID where CTX was included in shard A
+	CreatedAt     int64    // Timestamp of creation (for cleanup)
 }
 
 // Ledger maintains the set of pending cross-shard transactions
@@ -70,7 +71,7 @@ func (l *Ledger) Get(pairID string) (*Pending, bool) {
 // Settle settles a cross-shard transaction when CTX' is included in destination shard
 // Calls the credit function to distribute rewards to both proposers
 // Returns error if PairID not found or already settled
-func (l *Ledger) Settle(pairID string, destBlockID string, creditFunc func(shardID int, proposerID string, amount uint64)) error {
+func (l *Ledger) Settle(pairID string, destBlockID string, creditFunc func(shardID int, proposerID string, amount *big.Int)) error {
 	l.mu.Lock()
 	defer l.mu.Unlock()
 
@@ -91,11 +92,11 @@ func (l *Ledger) Settle(pairID string, destBlockID string, creditFunc func(shard
 	sourceProposerID := fmt.Sprintf("proposer_shard_%d_block_%s", p.ShardA, p.SourceBlockID)
 	destProposerID := fmt.Sprintf("proposer_shard_%d_block_%s", p.ShardB, destBlockID)
 
-	// Credit uA to source shard proposer
-	creditFunc(p.ShardA, sourceProposerID, p.UtilityA)
+	// Credit uA to source shard proposer (make copy to prevent modification)
+	creditFunc(p.ShardA, sourceProposerID, new(big.Int).Set(p.UtilityA))
 
-	// Credit uB to destination shard proposer
-	creditFunc(p.ShardB, destProposerID, p.UtilityB)
+	// Credit uB to destination shard proposer (make copy to prevent modification)
+	creditFunc(p.ShardB, destProposerID, new(big.Int).Set(p.UtilityB))
 
 	// Mark as settled and remove from pending
 	l.settled[pairID] = true
@@ -180,8 +181,8 @@ func (l *Ledger) Reset() {
 type Stats struct {
 	PendingCount int
 	SettledCount int
-	TotalSubsidy uint64 // Total subsidy R in pending transactions
-	TotalFees    uint64 // Total fees f_AB in pending transactions
+	TotalSubsidy *big.Int // Total subsidy R in pending transactions
+	TotalFees    *big.Int // Total fees f_AB in pending transactions
 }
 
 // GetStats returns current ledger statistics
@@ -192,11 +193,17 @@ func (l *Ledger) GetStats() Stats {
 	stats := Stats{
 		PendingCount: len(l.pending),
 		SettledCount: len(l.settled),
+		TotalSubsidy: big.NewInt(0),
+		TotalFees:    big.NewInt(0),
 	}
 
 	for _, p := range l.pending {
-		stats.TotalSubsidy += p.R
-		stats.TotalFees += p.FAB
+		if p.R != nil {
+			stats.TotalSubsidy.Add(stats.TotalSubsidy, p.R)
+		}
+		if p.FAB != nil {
+			stats.TotalFees.Add(stats.TotalFees, p.FAB)
+		}
 	}
 
 	return stats

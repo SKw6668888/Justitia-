@@ -2,6 +2,7 @@
 package expectation
 
 import (
+	"math/big"
 	"sync"
 )
 
@@ -9,9 +10,9 @@ import (
 type Tracker struct {
 	WindowSize int                        // Number of blocks in the sliding window
 	mu         sync.RWMutex              // Protects concurrent access
-	itxWindows map[int][]uint64          // shard -> list of per-block average ITX fees
+	itxWindows map[int][]*big.Int        // shard -> list of per-block average ITX fees
 	blockCount map[int]int               // shard -> number of blocks processed
-	avg        map[int]uint64            // shard -> current E(f_s)
+	avg        map[int]*big.Int          // shard -> current E(f_s)
 }
 
 // NewTracker creates a new fee expectation tracker with the specified window size
@@ -21,38 +22,41 @@ func NewTracker(windowSize int) *Tracker {
 	}
 	return &Tracker{
 		WindowSize: windowSize,
-		itxWindows: make(map[int][]uint64),
+		itxWindows: make(map[int][]*big.Int),
 		blockCount: make(map[int]int),
-		avg:        make(map[int]uint64),
+		avg:        make(map[int]*big.Int),
 	}
 }
 
 // OnBlockFinalized is called when a block is finalized in a shard
 // It updates the sliding window with ITX fees from that block and recomputes E(f_s)
 // itxFeesInBlock contains only the proposer fees from intra-shard transactions
-func (t *Tracker) OnBlockFinalized(shardID int, itxFeesInBlock []uint64) {
+func (t *Tracker) OnBlockFinalized(shardID int, itxFeesInBlock []*big.Int) {
 	t.mu.Lock()
 	defer t.mu.Unlock()
 
 	// Calculate average fee for this block (only from ITX)
-	var blockAvg uint64
+	blockAvg := big.NewInt(0)
 	if len(itxFeesInBlock) > 0 {
-		var sum uint64
+		sum := big.NewInt(0)
 		for _, fee := range itxFeesInBlock {
-			sum += fee
+			if fee != nil {
+				sum.Add(sum, fee)
+			}
 		}
-		blockAvg = sum / uint64(len(itxFeesInBlock))
+		// Integer division: blockAvg = sum / len
+		blockAvg.Div(sum, big.NewInt(int64(len(itxFeesInBlock))))
 	}
 
 	// Initialize shard data if not exists
 	if _, exists := t.itxWindows[shardID]; !exists {
-		t.itxWindows[shardID] = make([]uint64, 0, t.WindowSize)
+		t.itxWindows[shardID] = make([]*big.Int, 0, t.WindowSize)
 		t.blockCount[shardID] = 0
-		t.avg[shardID] = 0
+		t.avg[shardID] = big.NewInt(0)
 	}
 
-	// Add block average to window
-	t.itxWindows[shardID] = append(t.itxWindows[shardID], blockAvg)
+	// Add block average to window (make a copy to avoid sharing)
+	t.itxWindows[shardID] = append(t.itxWindows[shardID], new(big.Int).Set(blockAvg))
 	t.blockCount[shardID]++
 
 	// Keep only last WindowSize blocks
@@ -69,36 +73,40 @@ func (t *Tracker) OnBlockFinalized(shardID int, itxFeesInBlock []uint64) {
 func (t *Tracker) recomputeAvg(shardID int) {
 	window := t.itxWindows[shardID]
 	if len(window) == 0 {
-		t.avg[shardID] = 0
+		t.avg[shardID] = big.NewInt(0)
 		return
 	}
 
-	var sum uint64
+	sum := big.NewInt(0)
 	for _, blockAvg := range window {
-		sum += blockAvg
+		if blockAvg != nil {
+			sum.Add(sum, blockAvg)
+		}
 	}
-	t.avg[shardID] = sum / uint64(len(window))
+	// Integer division: avg = sum / len
+	t.avg[shardID] = new(big.Int).Div(sum, big.NewInt(int64(len(window))))
 }
 
 // GetAvgITXFee returns the current rolling average ITX fee E(f_s) for a shard
-func (t *Tracker) GetAvgITXFee(shardID int) uint64 {
+// Returns a copy to prevent concurrent modification
+func (t *Tracker) GetAvgITXFee(shardID int) *big.Int {
 	t.mu.RLock()
 	defer t.mu.RUnlock()
 
 	if avg, exists := t.avg[shardID]; exists {
-		return avg
+		return new(big.Int).Set(avg)
 	}
-	return 0 // Return 0 if no data yet (bootstrap phase)
+	return big.NewInt(0) // Return 0 if no data yet (bootstrap phase)
 }
 
 // GetAllAvgFees returns a snapshot of all shard averages (for metrics/debugging)
-func (t *Tracker) GetAllAvgFees() map[int]uint64 {
+func (t *Tracker) GetAllAvgFees() map[int]*big.Int {
 	t.mu.RLock()
 	defer t.mu.RUnlock()
 
-	snapshot := make(map[int]uint64)
+	snapshot := make(map[int]*big.Int)
 	for shardID, avg := range t.avg {
-		snapshot[shardID] = avg
+		snapshot[shardID] = new(big.Int).Set(avg)
 	}
 	return snapshot
 }
@@ -129,8 +137,8 @@ func (t *Tracker) ResetAll() {
 	t.mu.Lock()
 	defer t.mu.Unlock()
 
-	t.itxWindows = make(map[int][]uint64)
+	t.itxWindows = make(map[int][]*big.Int)
 	t.blockCount = make(map[int]int)
-	t.avg = make(map[int]uint64)
+	t.avg = make(map[int]*big.Int)
 }
 
