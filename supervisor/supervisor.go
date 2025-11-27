@@ -88,6 +88,8 @@ func (d *Supervisor) NewSupervisor(ip string, pcc *params.ChainConfig, committee
 			d.testMeasureMods = append(d.testMeasureMods, measure.NewTestTxDetail())
 		case "Justitia":
 			d.testMeasureMods = append(d.testMeasureMods, measure.NewTestModule_Justitia())
+		case "CTX_Fee_Latency":
+			d.testMeasureMods = append(d.testMeasureMods, measure.NewTestModule_CTX_FeeLatency())
 		default:
 		}
 	}

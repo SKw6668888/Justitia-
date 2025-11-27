@@ -30,6 +30,11 @@ func TestRAB_Modes(t *testing.T) {
 			mode: SubsidySumAvg,
 			want: big.NewInt(300), // EA + EB
 		},
+		{
+			name: "ExtremeFixed mode",
+			mode: SubsidyExtremeFixed,
+			want: big.NewInt(1000000000000000000), // 1 ETH = 10^18 wei
+		},
 	}
 	
 	for _, tt := range tests {

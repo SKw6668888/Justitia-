@@ -1,0 +1,10 @@
+# Justitia 数据分析与绘图依赖包
+# 
+# 安装方法:
+#   pip install -r requirements.txt
+
+numpy>=1.19.0
+pandas>=1.1.0
+matplotlib>=3.3.0
+seaborn>=0.11.0
+scipy>=1.5.0

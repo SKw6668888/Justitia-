@@ -18,6 +18,8 @@ const (
 	SubsidySumAvg
 	// SubsidyCustom means use a custom function to compute R
 	SubsidyCustom
+	// SubsidyExtremeFixed means fixed subsidy of 1 ETH per cross-shard transaction
+	SubsidyExtremeFixed
 )
 
 // String returns the string representation of the subsidy mode
@@ -31,6 +33,8 @@ func (m SubsidyMode) String() string {
 		return "SumAvg"
 	case SubsidyCustom:
 		return "Custom"
+	case SubsidyExtremeFixed:
+		return "ExtremeFixed"
 	default:
 		return "Unknown"
 	}
@@ -38,11 +42,11 @@ func (m SubsidyMode) String() string {
 
 // Config holds the configuration for Justitia incentive mechanism
 type Config struct {
-	Mode         SubsidyMode                          // Subsidy calculation mode
-	WindowBlocks int                                  // Number of blocks for rolling average
-	CustomF      func(*big.Int, *big.Int) *big.Int   // Custom function for subsidy (if mode is Custom)
-	GammaMin     *big.Int                             // Optional: minimum subsidy budget per block
-	GammaMax     *big.Int                             // Optional: maximum subsidy budget per block
+	Mode         SubsidyMode                       // Subsidy calculation mode
+	WindowBlocks int                               // Number of blocks for rolling average
+	CustomF      func(*big.Int, *big.Int) *big.Int // Custom function for subsidy (if mode is Custom)
+	GammaMin     *big.Int                          // Optional: minimum subsidy budget per block
+	GammaMax     *big.Int                          // Optional: maximum subsidy budget per block
 }
 
 // RAB computes the subsidy R_AB for a cross-shard transaction from shard A to shard B
@@ -52,17 +56,17 @@ type Config struct {
 // Returns a new big.Int containing the subsidy amount
 func RAB(mode SubsidyMode, EA, EB *big.Int, customF func(*big.Int, *big.Int) *big.Int) *big.Int {
 	zero := big.NewInt(0)
-	
+
 	switch mode {
 	case SubsidyNone:
 		return zero
-		
+
 	case SubsidyDestAvg:
 		if EB == nil {
 			return zero
 		}
 		return new(big.Int).Set(EB)
-		
+
 	case SubsidySumAvg:
 		if EA == nil && EB == nil {
 			return zero
@@ -75,7 +79,7 @@ func RAB(mode SubsidyMode, EA, EB *big.Int, customF func(*big.Int, *big.Int) *bi
 		}
 		// R = EA + EB
 		return new(big.Int).Add(EA, EB)
-		
+
 	case SubsidyCustom:
 		if customF != nil {
 			result := customF(EA, EB)
@@ -89,7 +93,11 @@ func RAB(mode SubsidyMode, EA, EB *big.Int, customF func(*big.Int, *big.Int) *bi
 			return new(big.Int).Set(EB)
 		}
 		return zero
-		
+
+	case SubsidyExtremeFixed:
+		// Extreme fixed subsidy: 1 ETH = 10^18 wei
+		return big.NewInt(1000000000000000000)
+
 	default:
 		return zero
 	}
@@ -116,24 +124,24 @@ func Split2(fAB, R, EA, EB *big.Int) (uA, uB *big.Int) {
 	if EB == nil {
 		EB = big.NewInt(0)
 	}
-	
+
 	// total = fAB + R
 	total := new(big.Int).Add(fAB, R)
-	
+
 	// diff = EA - EB
 	diff := new(big.Int).Sub(EA, EB)
-	
+
 	// Shapley formula:
 	// uA = (fAB + R + EA - EB) / 2 = (total + diff) / 2
 	// uB = (fAB + R + EB - EA) / 2 = (total - diff) / 2
 	two := big.NewInt(2)
-	
+
 	uA_calc := new(big.Int).Add(total, diff)
 	uA_calc.Div(uA_calc, two)
-	
+
 	uB_calc := new(big.Int).Sub(total, diff)
 	uB_calc.Div(uB_calc, two)
-	
+
 	// Ensure non-negative while preserving the invariant uA + uB = total
 	zero := big.NewInt(0)
 	if uA_calc.Cmp(zero) < 0 {
@@ -149,7 +157,7 @@ func Split2(fAB, R, EA, EB *big.Int) (uA, uB *big.Int) {
 		uA = uA_calc
 		uB = uB_calc
 	}
-	
+
 	return uA, uB
 }
 
@@ -159,7 +167,7 @@ type Case int
 const (
 	// Case1: uA >= EA, include CTX in block (high priority)
 	Case1 Case = iota + 1
-	// Case2: uA <= EA - EB, drop or defer CTX (very low priority, usually excluded)
+	// Case2: uA <= EA - EB, defer CTX to lowest priority (Phase 3, not dropped)
 	Case2
 	// Case3: EA - EB < uA < EA, include CTX only if space remains (medium priority)
 	Case3
@@ -171,7 +179,7 @@ func (c Case) String() string {
 	case Case1:
 		return "Case1(Include)"
 	case Case2:
-		return "Case2(Drop)"
+		return "Case2(Defer)"
 	case Case3:
 		return "Case3(IfSpace)"
 	default:
@@ -192,12 +200,12 @@ func Classify(uA, EA, EB *big.Int) Case {
 	if EB == nil {
 		EB = big.NewInt(0)
 	}
-	
+
 	// Case 1: uA >= EA → always include
 	if uA.Cmp(EA) >= 0 {
 		return Case1
 	}
-	
+
 	// Case 2: uA <= EA - EB → drop/defer
 	// Handle underflow: if EB >= EA, then EA - EB <= 0
 	if EB.Cmp(EA) >= 0 {
@@ -208,12 +216,12 @@ func Classify(uA, EA, EB *big.Int) Case {
 		// Otherwise uA > 0 >= EA - EB, so it's Case3
 		return Case3
 	}
-	
+
 	threshold := new(big.Int).Sub(EA, EB)
 	if uA.Cmp(threshold) <= 0 {
 		return Case2
 	}
-	
+
 	// Case 3: EA - EB < uA < EA → include if space
 	return Case3
 }
@@ -222,10 +230,10 @@ func Classify(uA, EA, EB *big.Int) Case {
 // For ITX: score = feeToProposer
 // For CTX: score = u (utility for the local shard)
 type TxScore struct {
-	TxHash      string
+	TxHash       string
 	IsCrossShard bool
-	Score       *big.Int  // Fee for ITX, utility for CTX
-	Case        Case      // Only relevant for CTX
+	Score        *big.Int // Fee for ITX, utility for CTX
+	Case         Case     // Only relevant for CTX
 }
 
 // ComputeCTXScore computes the score for a cross-shard transaction from the perspective of a shard

@@ -301,17 +301,9 @@ func TestJustitia_SubsidyModes(t *testing.T) {
 		selected := sched.SelectForBlock(10, []*core.Transaction{tx})
 
 		if len(selected) == 0 {
-			// In None mode, low-fee CTX may be rejected (Case2)
-			// This demonstrates that without subsidy, CTX is less competitive
-			if tc.mode == justitia.SubsidyNone {
-				t.Logf("Mode %s: Transaction excluded as expected (demonstrates need for subsidy)", tc.name)
-				// Verify R was still computed correctly
-				if tx.SubsidyR.Cmp(tc.expectedR) != 0 {
-					t.Errorf("Mode %s: R = %v, want %v", tc.name, tx.SubsidyR, tc.expectedR)
-				}
-				return // This is expected behavior
-			}
-			t.Fatalf("Mode %s: No transaction selected", tc.name)
+			// This should not happen anymore - Case2 CTX are deferred to Phase3, not dropped
+			// Even with no subsidy, the transaction should still be selected if block has space
+			t.Fatalf("Mode %s: No transaction selected (unexpected - Case2 should be in Phase3)", tc.name)
 		}
 
 		// Verify subsidy matches expected

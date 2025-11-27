@@ -45,7 +45,7 @@ var (
 
 	// Justitia incentive mechanism parameters
 	EnableJustitia       = 0            // Enable Justitia incentive mechanism (1: enabled, 0: disabled)
-	JustitiaSubsidyMode  = 1            // Subsidy mode: 0=None, 1=DestAvg, 2=SumAvg, 3=Custom
+	JustitiaSubsidyMode  = 1            // Subsidy mode: 0=None, 1=DestAvg, 2=SumAvg, 3=Custom, 4=ExtremeFixed
 	JustitiaWindowBlocks = 16           // Number of blocks for rolling average E(f_s)
 	JustitiaGammaMin     = uint64(0)    // Minimum subsidy budget per block (0=no limit)
 	JustitiaGammaMax     = uint64(0)    // Maximum subsidy budget per block (0=no limit)

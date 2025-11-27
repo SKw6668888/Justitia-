@@ -96,10 +96,11 @@ type Tracker struct {
 
 ```go
 const (
-    SubsidyNone       // R = 0（无补贴）
-    SubsidyDestAvg    // R = E(f_B)（目标分片平均费用，默认）
-    SubsidySumAvg     // R = E(f_A) + E(f_B)（两分片平均之和）
-    SubsidyCustom     // R = F(E(f_A), E(f_B))（自定义函数）
+    SubsidyNone           // R = 0（无补贴）
+    SubsidyDestAvg        // R = E(f_B)（目标分片平均费用，默认）
+    SubsidySumAvg         // R = E(f_A) + E(f_B)（两分片平均之和）
+    SubsidyCustom         // R = F(E(f_A), E(f_B))（自定义函数）
+    SubsidyExtremeFixed   // R = 1 ETH/CTX（极端固定补贴）
 )
 ```
 
@@ -141,12 +142,19 @@ func Classify(uA, EA, EB uint64) Case
 | 分类 | 条件 | 决策 | 优先级 |
 |------|------|------|--------|
 | Case1 | uA >= EA | 总是包含 | 高（阶段1） |
-| Case2 | uA <= EA - EB | 延迟/丢弃 | 极低（排除） |
+| Case2 | uA <= EA - EB | 延迟处理 | 极低（阶段3） |
 | Case3 | EA - EB < uA < EA | 有空间时包含 | 中（阶段2） |
 
 **Case1**：CTX 的效用至少等于平均 ITX 费用，值得优先处理  
-**Case2**：CTX 的效用过低，不值得立即处理  
+**Case2**：CTX 的效用过低，作为最低优先级延迟处理，但**不会被永久丢弃**  
 **Case3**：CTX 效用适中，在满足高优先级交易后有剩余空间时处理
+
+**重要说明**：
+- **分类仅在源分片进行**：只有源分片根据 uA 对 CTX 进行分类
+- **目标分片不分类**：目标分片将所有接收到的 CTX 视为高优先级（Case1），因为：
+  1. CTX 已在源分片经过筛选
+  2. 目标分片应尽快完成第二阶段，避免二次延迟
+  3. 目标分片的效用 uB 已经在源分片决策时被考虑
 
 ### 3. 交易结构扩展（core/transaction）
 
@@ -223,7 +231,11 @@ func (s *Scheduler) SelectForBlock(capacity int, txPool []*core.Transaction) []*
 - ITX：`fee < EA`
 - CTX：`Case3`（`EA - EB < uA < EA`）
 - 按分数降序排列
-- **Case2 CTX 被排除**
+
+**阶段 3（最低优先级）**：
+- CTX：`Case2`（`uA <= EA - EB`）
+- 按分数降序排列
+- 仅在阶段1和阶段2未填满区块时考虑
 
 **评分规则**：
 - ITX 分数 = `FeeToProposer`
@@ -331,7 +343,7 @@ func (cfg *BudgetConfig) ToBudget() (*Budget, error)
 ```json
 {
   "EnableJustitia": 1,           // 启用 Justitia（1=启用，0=禁用）
-  "JustitiaSubsidyMode": 1,      // 补贴模式（0=None, 1=DestAvg, 2=SumAvg, 3=Custom）
+  "JustitiaSubsidyMode": 1,      // 补贴模式（0=None, 1=DestAvg, 2=SumAvg, 3=Custom, 4=ExtremeFixed）
   "JustitiaWindowBlocks": 16,    // 滚动平均窗口大小（区块数）
   "JustitiaGammaMin": 0,         // 每区块最小补贴（0=无限制）
   "JustitiaGammaMax": 0,         // 每区块最大补贴（0=无限制）

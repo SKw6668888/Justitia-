@@ -70,9 +70,9 @@ func (rphm *RawRelayPbftExtraHandleMod) HandleinCommit(cmsg *message.Commit) boo
 
 	// now try to relay txs to other shards (for main nodes)
 	if rphm.pbftNode.NodeID == uint64(rphm.pbftNode.view.Load()) {
-	rphm.pbftNode.pl.Plog.Printf("S%dN%d : main node is trying to send relay txs at height = %d \n", rphm.pbftNode.ShardID, rphm.pbftNode.NodeID, block.Header.Number)
-	// generate relay pool and collect txs excuted
-	rphm.pbftNode.CurChain.Txpool.InitRelayPool()
+		rphm.pbftNode.pl.Plog.Printf("S%dN%d : main node is trying to send relay txs at height = %d \n", rphm.pbftNode.ShardID, rphm.pbftNode.NodeID, block.Header.Number)
+		// generate relay pool and collect txs excuted
+		rphm.pbftNode.CurChain.Txpool.InitRelayPool()
 		interShardTxs := make([]*core.Transaction, 0)
 		relay1Txs := make([]*core.Transaction, 0)
 		relay2Txs := make([]*core.Transaction, 0)
@@ -88,7 +88,7 @@ func (rphm *RawRelayPbftExtraHandleMod) HandleinCommit(cmsg *message.Commit) boo
 			if rsid != rphm.pbftNode.ShardID {
 				relay1Txs = append(relay1Txs, tx)
 				tx.Relayed = true
-				
+
 				// Justitia: mark as cross-shard
 				// Note: Subsidy R and utilities should be computed by the scheduler
 				// based on current fee environment when selecting transactions
@@ -96,7 +96,7 @@ func (rphm *RawRelayPbftExtraHandleMod) HandleinCommit(cmsg *message.Commit) boo
 					tx.IsCrossShard = true
 					// SubsidyR will be computed dynamically by scheduler
 				}
-				
+
 				rphm.pbftNode.CurChain.Txpool.AddRelayTx(tx, rsid)
 			} else {
 				if tx.Relayed {
@@ -119,7 +119,7 @@ func (rphm *RawRelayPbftExtraHandleMod) HandleinCommit(cmsg *message.Commit) boo
 		bim := message.BlockInfoMsg{
 			BlockBodyLength: len(block.Body),
 			InnerShardTxs:   interShardTxs,
-			Epoch:           0,
+			Epoch:           int(rphm.pbftNode.CurChain.CurrentBlock.Header.Number),
 
 			Relay1Txs: relay1Txs,
 			Relay2Txs: relay2Txs,
@@ -135,10 +135,10 @@ func (rphm *RawRelayPbftExtraHandleMod) HandleinCommit(cmsg *message.Commit) boo
 		msg_send := message.MergeMessage(message.CBlockInfo, bByte)
 		go networks.TcpDial(msg_send, rphm.pbftNode.ip_nodeTable[params.SupervisorShard][0])
 		rphm.pbftNode.pl.Plog.Printf("S%dN%d : sended excuted txs\n", rphm.pbftNode.ShardID, rphm.pbftNode.NodeID)
-		
+
 		// Get txpool length before acquiring lock to avoid deadlock
 		txpoolLen := rphm.pbftNode.CurChain.Txpool.GetTxQueueLen()
-		
+
 		rphm.pbftNode.CurChain.Txpool.GetLocked()
 		metricName := []string{
 			"Block Height",
@@ -155,11 +155,11 @@ func (rphm *RawRelayPbftExtraHandleMod) HandleinCommit(cmsg *message.Commit) boo
 			"SUM of confirm latency (ms, Relay2 Txs) (Duration: Relay1 proposed -> Relay2 Commit)",
 		}
 		metricVal := []string{
-		strconv.Itoa(int(block.Header.Number)),
-		strconv.Itoa(bim.Epoch),
-		strconv.Itoa(txpoolLen),
-		strconv.Itoa(len(block.Body)),
-		strconv.Itoa(len(relay1Txs)),
+			strconv.Itoa(int(block.Header.Number)),
+			strconv.Itoa(bim.Epoch),
+			strconv.Itoa(txpoolLen),
+			strconv.Itoa(len(block.Body)),
+			strconv.Itoa(len(relay1Txs)),
 			strconv.Itoa(len(relay2Txs)),
 			strconv.FormatInt(bim.ProposeTime.UnixMilli(), 10),
 			strconv.FormatInt(bim.CommitTime.UnixMilli(), 10),
@@ -201,7 +201,7 @@ func (rphm *RawRelayPbftExtraHandleMod) HandleforSequentialRequest(som *message.
 func (rphm *RawRelayPbftExtraHandleMod) updateFeeTracker(block *core.Block) {
 	// Extract intra-shard transaction fees (ITX only, exclude CTX)
 	itxFees := make([]*big.Int, 0)
-	
+
 	for _, tx := range block.Body {
 		// Only count transactions that are NOT cross-shard (ITX)
 		// and are NOT relay transactions (first phase only)
@@ -211,14 +211,18 @@ func (rphm *RawRelayPbftExtraHandleMod) updateFeeTracker(block *core.Block) {
 			}
 		}
 	}
-	
+
 	// Update the global fee tracker
 	if len(itxFees) > 0 {
 		feeTracker := fees.GetGlobalTracker()
 		feeTracker.OnBlockFinalized(int(rphm.pbftNode.ShardID), itxFees)
-		
+
+		// Get updated average for debugging
+		avgFee := feeTracker.GetAvgITXFee(int(rphm.pbftNode.ShardID))
+
 		// Log for debugging
-		rphm.pbftNode.pl.Plog.Printf("S%dN%d : Updated fee tracker with %d ITX fees for block %d\n", 
-			rphm.pbftNode.ShardID, rphm.pbftNode.NodeID, len(itxFees), block.Header.Number)
+		rphm.pbftNode.pl.Plog.Printf("S%dN%d : Updated fee tracker with %d ITX fees for block %d, new E(f_%d)=%s\n",
+			rphm.pbftNode.ShardID, rphm.pbftNode.NodeID, len(itxFees), block.Header.Number,
+			rphm.pbftNode.ShardID, avgFee.String())
 	}
 }

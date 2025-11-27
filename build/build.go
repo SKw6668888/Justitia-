@@ -53,6 +53,10 @@ func BuildSupervisor(nnm, snm uint64) {
 		measureMod = params.MeasureRelayMod
 	}
 	measureMod = append(measureMod, "Tx_Details")
+	// Add CTX fee-latency analysis module if Justitia is enabled
+	if params.EnableJustitia == 1 {
+		measureMod = append(measureMod, "CTX_Fee_Latency")
+	}
 
 	lsn := new(supervisor.Supervisor)
 	lsn.NewSupervisor(params.SupervisorAddr, initConfig(123, nnm, 123, snm), params.CommitteeMethod[methodID], measureMod...)
