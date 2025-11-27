@@ -1,6 +1,7 @@
 package pbft_all
 
 import (
+	"blockEmulator/fees"
 	"blockEmulator/message"
 	"encoding/json"
 	"log"
@@ -19,6 +20,8 @@ func (rrom *RawBrokerOutsideModule) HandleMessageOutsidePBFT(msgType message.Mes
 		rrom.handleSeqIDinfos(content)
 	case message.CInject:
 		rrom.handleInjectTx(content)
+	case message.CFeeInfoSync:
+		rrom.handleFeeInfoSync(content)
 	default:
 	}
 	return true
@@ -46,4 +49,22 @@ func (rrom *RawBrokerOutsideModule) handleInjectTx(content []byte) {
 	}
 	rrom.pbftNode.CurChain.Txpool.AddTxs2Pool(it.Txs)
 	rrom.pbftNode.pl.Plog.Printf("S%dN%d : has handled injected txs msg, txs: %d \n", rrom.pbftNode.ShardID, rrom.pbftNode.NodeID, len(it.Txs))
+}
+
+// handleFeeInfoSync processes fee synchronization messages from other shards
+func (rrom *RawBrokerOutsideModule) handleFeeInfoSync(content []byte) {
+	feeMsg := new(message.FeeInfoSync)
+	err := json.Unmarshal(content, feeMsg)
+	if err != nil {
+		rrom.pbftNode.pl.Plog.Printf("S%dN%d : Error unmarshaling fee info: %v\n",
+			rrom.pbftNode.ShardID, rrom.pbftNode.NodeID, err)
+		return
+	}
+
+	feeTracker := fees.GetGlobalTracker()
+	feeTracker.UpdateRemoteShardFee(int(feeMsg.ShardID), feeMsg.AvgITXFee)
+
+	rrom.pbftNode.pl.Plog.Printf("S%dN%d : Received fee info from S%d: E(f_%d)=%s at block %d\n",
+		rrom.pbftNode.ShardID, rrom.pbftNode.NodeID, feeMsg.ShardID,
+		feeMsg.ShardID, feeMsg.AvgITXFee.String(), feeMsg.BlockHeight)
 }

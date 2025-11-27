@@ -3,6 +3,7 @@ package pbft_all
 import (
 	"blockEmulator/chain"
 	"blockEmulator/consensus_shard/pbft_all/dataSupport"
+	"blockEmulator/fees"
 	"blockEmulator/message"
 	"encoding/json"
 	"log"
@@ -23,6 +24,8 @@ func (crom *CLPARelayOutsideModule) HandleMessageOutsidePBFT(msgType message.Mes
 		crom.handleRelayWithProof(content)
 	case message.CInject:
 		crom.handleInjectTx(content)
+	case message.CFeeInfoSync:
+		crom.handleFeeInfoSync(content)
 
 	// messages about CLPA
 	case message.CPartitionMsg:
@@ -135,4 +138,22 @@ func (crom *CLPARelayOutsideModule) handleAccountStateAndTxMsg(content []byte) {
 		crom.cdm.CollectLock.Unlock()
 		crom.pbftNode.pl.Plog.Printf("S%dN%d has added all accoutStateandTx~~~\n", crom.pbftNode.ShardID, crom.pbftNode.NodeID)
 	}
+}
+
+// handleFeeInfoSync processes fee synchronization messages from other shards
+func (crom *CLPARelayOutsideModule) handleFeeInfoSync(content []byte) {
+	feeMsg := new(message.FeeInfoSync)
+	err := json.Unmarshal(content, feeMsg)
+	if err != nil {
+		crom.pbftNode.pl.Plog.Printf("S%dN%d : Error unmarshaling fee info: %v\n",
+			crom.pbftNode.ShardID, crom.pbftNode.NodeID, err)
+		return
+	}
+
+	feeTracker := fees.GetGlobalTracker()
+	feeTracker.UpdateRemoteShardFee(int(feeMsg.ShardID), feeMsg.AvgITXFee)
+
+	crom.pbftNode.pl.Plog.Printf("S%dN%d : Received fee info from S%d: E(f_%d)=%s at block %d\n",
+		crom.pbftNode.ShardID, crom.pbftNode.NodeID, feeMsg.ShardID,
+		feeMsg.ShardID, feeMsg.AvgITXFee.String(), feeMsg.BlockHeight)
 }

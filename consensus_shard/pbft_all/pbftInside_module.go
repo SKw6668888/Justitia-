@@ -66,6 +66,11 @@ func (rphm *RawRelayPbftExtraHandleMod) HandleinCommit(cmsg *message.Commit) boo
 	// Justitia: Update fee tracker with ITX fees from this block
 	if params.EnableJustitia == 1 {
 		rphm.updateFeeTracker(block)
+		
+		// Broadcast fee info to other shards (only by leader node)
+		if rphm.pbftNode.NodeID == uint64(rphm.pbftNode.view.Load()) {
+			rphm.broadcastFeeInfo(block)
+		}
 	}
 
 	// now try to relay txs to other shards (for main nodes)
@@ -225,4 +230,43 @@ func (rphm *RawRelayPbftExtraHandleMod) updateFeeTracker(block *core.Block) {
 			rphm.pbftNode.ShardID, rphm.pbftNode.NodeID, len(itxFees), block.Header.Number,
 			rphm.pbftNode.ShardID, avgFee.String())
 	}
+}
+
+// broadcastFeeInfo broadcasts this shard's average fee to all other shards
+// This enables cross-shard subsidy calculation in multi-process architecture
+func (rphm *RawRelayPbftExtraHandleMod) broadcastFeeInfo(block *core.Block) {
+	feeTracker := fees.GetGlobalTracker()
+	avgFee := feeTracker.GetAvgITXFee(int(rphm.pbftNode.ShardID))
+
+	// Create fee sync message
+	feeMsg := message.NewFeeInfoSync(
+		rphm.pbftNode.ShardID,
+		avgFee,
+		block.Header.Number,
+	)
+
+	// Serialize the message
+	feeByte, err := json.Marshal(feeMsg)
+	if err != nil {
+		rphm.pbftNode.pl.Plog.Printf("S%dN%d : Error marshaling fee info: %v\n",
+			rphm.pbftNode.ShardID, rphm.pbftNode.NodeID, err)
+		return
+	}
+
+	msg_send := message.MergeMessage(message.CFeeInfoSync, feeByte)
+
+	// Broadcast to leader nodes of all other shards
+	for sid := uint64(0); sid < uint64(params.ShardNum); sid++ {
+		if sid != rphm.pbftNode.ShardID {
+			// Send to the leader (node 0) of each shard
+			// In PBFT, the leader is typically the node with ID equal to the view number
+			// For simplicity, we send to node 0 of each shard
+			targetIP := rphm.pbftNode.ip_nodeTable[sid][0]
+			go networks.TcpDial(msg_send, targetIP)
+		}
+	}
+
+	rphm.pbftNode.pl.Plog.Printf("S%dN%d : Broadcasted fee info E(f_%d)=%s to all other shards at block %d\n",
+		rphm.pbftNode.ShardID, rphm.pbftNode.NodeID, rphm.pbftNode.ShardID,
+		avgFee.String(), block.Header.Number)
 }

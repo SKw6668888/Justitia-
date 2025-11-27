@@ -7,11 +7,11 @@
 
   "Block_Interval": 2000,
 
-  "BlockSize": 1500,
+  "BlockSize": 400,
   "BlocksizeInBytes": 300000,
   "UseBlocksizeInBytes": 0,
 
-  "InjectSpeed": 5000,
+  "InjectSpeed": 500,
   "TotalDataSize": 250000,
   "TxBatchSize": 25000,
 
@@ -25,8 +25,8 @@
   "JitterRange": -1,
   "Bandwidth":10000000,
 
-  "EnableJustitia": 1,
-  "JustitiaSubsidyMode": 1,
+  "EnableJustitia": 0,
+  "JustitiaSubsidyMode": 0,
   "JustitiaWindowBlocks": 16,
   "JustitiaGammaMin": 0,
   "JustitiaGammaMax": 0,

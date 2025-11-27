@@ -2,6 +2,7 @@ package pbft_all
 
 import (
 	"blockEmulator/consensus_shard/pbft_all/dataSupport"
+	"blockEmulator/fees"
 	"blockEmulator/message"
 	"encoding/json"
 	"log"
@@ -20,6 +21,8 @@ func (cbom *CLPABrokerOutsideModule) HandleMessageOutsidePBFT(msgType message.Me
 		cbom.handleSeqIDinfos(content)
 	case message.CInject:
 		cbom.handleInjectTx(content)
+	case message.CFeeInfoSync:
+		cbom.handleFeeInfoSync(content)
 
 	// messages about CLPA
 	case message.CPartitionMsg:
@@ -104,4 +107,22 @@ func (cbom *CLPABrokerOutsideModule) handleAccountStateAndTxMsg(content []byte) 
 		cbom.cdm.CollectLock.Unlock()
 		cbom.pbftNode.pl.Plog.Printf("S%dN%d has added all accoutStateandTx~~~\n", cbom.pbftNode.ShardID, cbom.pbftNode.NodeID)
 	}
+}
+
+// handleFeeInfoSync processes fee synchronization messages from other shards
+func (cbom *CLPABrokerOutsideModule) handleFeeInfoSync(content []byte) {
+	feeMsg := new(message.FeeInfoSync)
+	err := json.Unmarshal(content, feeMsg)
+	if err != nil {
+		cbom.pbftNode.pl.Plog.Printf("S%dN%d : Error unmarshaling fee info: %v\n",
+			cbom.pbftNode.ShardID, cbom.pbftNode.NodeID, err)
+		return
+	}
+
+	feeTracker := fees.GetGlobalTracker()
+	feeTracker.UpdateRemoteShardFee(int(feeMsg.ShardID), feeMsg.AvgITXFee)
+
+	cbom.pbftNode.pl.Plog.Printf("S%dN%d : Received fee info from S%d: E(f_%d)=%s at block %d\n",
+		cbom.pbftNode.ShardID, cbom.pbftNode.NodeID, feeMsg.ShardID,
+		feeMsg.ShardID, feeMsg.AvgITXFee.String(), feeMsg.BlockHeight)
 }
