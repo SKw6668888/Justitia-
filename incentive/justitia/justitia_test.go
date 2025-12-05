@@ -39,7 +39,7 @@ func TestRAB_Modes(t *testing.T) {
 	
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			got := RAB(tt.mode, EA, EB, nil)
+			got := RAB(tt.mode, EA, EB, nil, nil)
 			if got.Cmp(tt.want) != 0 {
 				t.Errorf("RAB() = %v, want %v", got, tt.want)
 			}
@@ -60,7 +60,7 @@ func TestRAB_CustomMode(t *testing.T) {
 		return new(big.Int).Set(eb)
 	}
 	
-	got := RAB(SubsidyCustom, EA, EB, customF)
+	got := RAB(SubsidyCustom, EA, EB, nil, customF)
 	want := big.NewInt(200) // max(100, 200)
 	
 	if got.Cmp(want) != 0 {
@@ -68,7 +68,7 @@ func TestRAB_CustomMode(t *testing.T) {
 	}
 	
 	// Test fallback when no custom function
-	got2 := RAB(SubsidyCustom, EA, EB, nil)
+	got2 := RAB(SubsidyCustom, EA, EB, nil, nil)
 	want2 := EB // Should fallback to DestAvg
 	if got2.Cmp(want2) != 0 {
 		t.Errorf("RAB(Custom, nil func) = %v, want %v", got2, want2)
@@ -90,7 +90,7 @@ func TestRAB_NilInputs(t *testing.T) {
 	
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			got := RAB(tt.mode, tt.EA, tt.EB, nil)
+			got := RAB(tt.mode, tt.EA, tt.EB, nil, nil)
 			if got == nil {
 				t.Errorf("RAB() returned nil, should return big.Int")
 			}

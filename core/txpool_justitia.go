@@ -2,6 +2,7 @@
 package core
 
 import (
+	"blockEmulator/incentive/justitia"
 	"blockEmulator/utils"
 	"container/heap"
 	"math/big"
@@ -98,6 +99,13 @@ func (txpool *PriorityTxPool) SetScheduler(sched TxScheduler, shardID int) {
 	defer txpool.lock.Unlock()
 	txpool.scheduler = sched
 	txpool.shardID = shardID
+}
+
+// GetScheduler returns the Justitia scheduler for this pool
+func (txpool *PriorityTxPool) GetScheduler() TxScheduler {
+	txpool.lock.Lock()
+	defer txpool.lock.Unlock()
+	return txpool.scheduler
 }
 
 // AddTx2Pool adds a transaction to the priority pool
@@ -353,4 +361,43 @@ func (txpool *PriorityTxPool) GetRelayPoolTxs(shardID uint64) []*Transaction {
 		return txs
 	}
 	return make([]*Transaction, 0)
+}
+
+// GetMetrics returns current dynamic metrics for Justitia incentive mechanism
+// This provides queue length and estimated wait time for the current shard
+func (txpool *PriorityTxPool) GetMetrics() justitia.DynamicMetrics {
+	txpool.lock.Lock()
+	defer txpool.lock.Unlock()
+	
+	queueLen := int64(txpool.TxQueue.Len())
+	
+	// Estimate average wait time based on queue length and transaction timestamps
+	// This is a rough estimate: we look at the oldest transaction in the queue
+	var avgWaitTime float64 = 0.0
+	
+	if queueLen > 0 {
+		// Find the oldest transaction in the queue
+		now := time.Now()
+		var oldestTime time.Time
+		
+		// Peek at transactions without modifying the heap
+		for _, tx := range *txpool.TxQueue {
+			if oldestTime.IsZero() || tx.Time.Before(oldestTime) {
+				oldestTime = tx.Time
+			}
+		}
+		
+		if !oldestTime.IsZero() {
+			// Average wait time = time since oldest transaction (in milliseconds)
+			avgWaitTime = float64(now.Sub(oldestTime).Milliseconds())
+		}
+	}
+	
+	return justitia.DynamicMetrics{
+		QueueLengthA:     queueLen,
+		QueueLengthB:     0,                // Will be filled by caller if needed
+		AvgWaitTimeA:     avgWaitTime,
+		AvgWaitTimeB:     0.0,              // Will be filled by caller if needed
+		CurrentInflation: big.NewInt(0),    // Will be filled by caller if needed
+	}
 }

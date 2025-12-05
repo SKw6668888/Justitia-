@@ -27,13 +27,13 @@ import (
 )
 
 type BlockChain struct {
-	db           ethdb.Database         // the leveldb database to store in the disk, for status trie
-	triedb       *trie.Database         // the trie database which helps to store the status trie
-	ChainConfig  *params.ChainConfig    // the chain configuration, which can help to identify the chain
-	CurrentBlock *core.Block            // the top block in this blockchain
-	Storage      *storage.Storage       // Storage is the bolt-db to store the blocks
-	Txpool       core.TxPoolInterface   // the transaction pool (can be TxPool or PriorityTxPool)
-	PartitionMap map[string]uint64      // the partition map which is defined by some algorithm can help account parition
+	db           ethdb.Database       // the leveldb database to store in the disk, for status trie
+	triedb       *trie.Database       // the trie database which helps to store the status trie
+	ChainConfig  *params.ChainConfig  // the chain configuration, which can help to identify the chain
+	CurrentBlock *core.Block          // the top block in this blockchain
+	Storage      *storage.Storage     // Storage is the bolt-db to store the blocks
+	Txpool       core.TxPoolInterface // the transaction pool (can be TxPool or PriorityTxPool)
+	PartitionMap map[string]uint64    // the partition map which is defined by some algorithm can help account parition
 	pmlock       sync.RWMutex
 }
 
@@ -248,6 +248,22 @@ func (bc *BlockChain) AddBlock(b *core.Block) {
 	}
 	bc.CurrentBlock = b
 	bc.Storage.AddBlock(b)
+
+	// Update Lagrangian epoch every N blocks
+	if params.EnableJustitia == 1 && params.JustitiaSubsidyMode == int(justitia.SubsidyLagrangian) {
+		// Update epoch every 10 blocks (configurable)
+		epochInterval := uint64(10)
+		if b.Header.Number%epochInterval == 0 {
+			// Get scheduler from txpool
+			if priorityPool, ok := bc.Txpool.(*core.PriorityTxPool); ok {
+				if sched := priorityPool.GetScheduler(); sched != nil {
+					if lagSched, ok := sched.(*scheduler.Scheduler); ok {
+						lagSched.UpdateEpoch()
+					}
+				}
+			}
+		}
+	}
 }
 
 // new a blockchain.
@@ -255,16 +271,16 @@ func (bc *BlockChain) AddBlock(b *core.Block) {
 func NewBlockChain(cc *params.ChainConfig, db ethdb.Database) (*BlockChain, error) {
 	fmt.Println("Generating a new blockchain", db)
 	chainDBfp := params.DatabaseWrite_path + fmt.Sprintf("chainDB/S%d_N%d", cc.ShardID, cc.NodeID)
-	
+
 	// Choose transaction pool implementation based on Justitia parameter
 	var txpool core.TxPoolInterface
 	if params.EnableJustitia == 1 {
 		// Create PriorityTxPool
 		priorityPool := core.NewPriorityTxPool()
-		
+
 		// Get global fee tracker
 		feeTracker := fees.GetGlobalTracker()
-		
+
 		// Create Justitia scheduler
 		sched := scheduler.NewScheduler(
 			int(cc.ShardID),
@@ -272,18 +288,18 @@ func NewBlockChain(cc *params.ChainConfig, db ethdb.Database) (*BlockChain, erro
 			feeTracker,
 			justitia.SubsidyMode(params.JustitiaSubsidyMode),
 		)
-		
+
 		// Set scheduler to txpool (uses interface to avoid circular dependency)
 		priorityPool.SetScheduler(sched, int(cc.ShardID))
-		
+
 		txpool = priorityPool
-		fmt.Printf("S%dN%d: Using PriorityTxPool with Justitia Scheduler (mode=%d, window=%d)\n", 
+		fmt.Printf("S%dN%d: Using PriorityTxPool with Justitia Scheduler (mode=%d, window=%d)\n",
 			cc.ShardID, cc.NodeID, params.JustitiaSubsidyMode, params.JustitiaWindowBlocks)
 	} else {
 		txpool = core.NewTxPool()
 		fmt.Printf("S%dN%d: Using standard TxPool (FIFO)\n", cc.ShardID, cc.NodeID)
 	}
-	
+
 	bc := &BlockChain{
 		db:           db,
 		ChainConfig:  cc,

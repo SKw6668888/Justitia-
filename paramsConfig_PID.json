@@ -3,7 +3,7 @@
   
   "PbftViewChangeTimeOut":20000,
 
-  "ExpDataRootDir": "expTest_Lagrangian",
+  "ExpDataRootDir": "expTest_PID",
 
   "Block_Interval": 2000,
 
@@ -26,33 +26,24 @@
   "Bandwidth":10000000,
 
   "EnableJustitia": 1,
-  "JustitiaSubsidyMode": 6,
+  "JustitiaSubsidyMode": 5,
   "JustitiaWindowBlocks": 16,
   "JustitiaGammaMin": 0,
   "JustitiaGammaMax": 0,
   "JustitiaRewardBase": 1000000000000000000,
 
-  "JustitiaPID_Kp": 1.5,
-  "JustitiaPID_Ki": 0.1,
+  "JustitiaPID_Kp": 1.0,
+  "JustitiaPID_Ki": 0.11,
   "JustitiaPID_Kd": 0.05,
   "JustitiaPID_TargetUtilization": 0.7,
   "JustitiaPID_CapacityB": 1000.0,
   "JustitiaPID_MinSubsidy": 0.0,
   "JustitiaPID_MaxSubsidy": 5.0,
 
-  "JustitiaLag_Alpha": 0.1,
+  "JustitiaLag_Alpha": 0.01,
   "JustitiaLag_WindowSize": 1000.0,
-  "JustitiaLag_MinLambda": 0.6,
+  "JustitiaLag_MinLambda": 1.0,
   "JustitiaLag_MaxLambda": 10.0,
-  "JustitiaLag_CongestionExp": 1.7,
-  "JustitiaLag_MaxInflation": 1000000000000000000,
-
-  "JustitiaRL_QueueThreshold1": 250.0,
-  "JustitiaRL_QueueThreshold2": 500.0,
-  "JustitiaRL_QueueThreshold3": 750.0,
-  "JustitiaRL_InflationThreshold": 0.7,
-  "JustitiaRL_DefaultBeta": 1.0,
-  "JustitiaRL_MinBeta": 0.0,
-  "JustitiaRL_MaxBeta": 3.0,
-  "JustitiaRL_PolicyFile": ""
+  "JustitiaLag_CongestionExp": 2.0,
+  "JustitiaLag_MaxInflation": 5000000000000000000
 }

@@ -45,11 +45,28 @@ var (
 
 	// Justitia incentive mechanism parameters
 	EnableJustitia       = 0            // Enable Justitia incentive mechanism (1: enabled, 0: disabled)
-	JustitiaSubsidyMode  = 1            // Subsidy mode: 0=None, 1=DestAvg, 2=SumAvg, 3=Custom, 4=ExtremeFixed
+	JustitiaSubsidyMode  = 1            // Subsidy mode: 0=None, 1=DestAvg, 2=SumAvg, 3=Custom, 4=ExtremeFixed, 5=PID, 6=Lagrangian, 7=RL
 	JustitiaWindowBlocks = 16           // Number of blocks for rolling average E(f_s)
 	JustitiaGammaMin     = uint64(0)    // Minimum subsidy budget per block (0=no limit)
 	JustitiaGammaMax     = uint64(0)    // Maximum subsidy budget per block (0=no limit)
 	JustitiaRewardBase   = 100.0        // Legacy: Base reward R (deprecated, use mode instead)
+	
+	// PID Controller parameters (mode=5)
+	JustitiaPID_Kp                = 1.5    // PID proportional gain
+	JustitiaPID_Ki                = 0.1    // PID integral gain
+	JustitiaPID_Kd                = 0.05   // PID derivative gain
+	JustitiaPID_TargetUtilization = 0.7    // Target queue utilization (0.0-1.0)
+	JustitiaPID_CapacityB         = 1000.0 // Queue capacity for destination shard
+	JustitiaPID_MinSubsidy        = 0.0    // Minimum subsidy multiplier
+	JustitiaPID_MaxSubsidy        = 5.0    // Maximum subsidy multiplier
+	
+	// Lagrangian Optimization parameters (mode=6)
+	JustitiaLag_Alpha         = 0.01   // Learning rate for shadow price update
+	JustitiaLag_WindowSize    = 1000.0 // Reference window size for congestion normalization
+	JustitiaLag_MinLambda     = 1.0    // Minimum shadow price
+	JustitiaLag_MaxLambda     = 10.0   // Maximum shadow price
+	JustitiaLag_CongestionExp = 2.0    // Exponent for congestion factor (2.0=quadratic)
+	JustitiaLag_MaxInflation  = uint64(5000000000000000000) // Maximum inflation per epoch (5 ETH in wei)
 )
 
 // network layer
@@ -92,6 +109,23 @@ type globalConfig struct {
 	JustitiaGammaMin     uint64  `json:"JustitiaGammaMin"`
 	JustitiaGammaMax     uint64  `json:"JustitiaGammaMax"`
 	JustitiaRewardBase   float64 `json:"JustitiaRewardBase"`
+	
+	// PID parameters
+	JustitiaPID_Kp                float64 `json:"JustitiaPID_Kp"`
+	JustitiaPID_Ki                float64 `json:"JustitiaPID_Ki"`
+	JustitiaPID_Kd                float64 `json:"JustitiaPID_Kd"`
+	JustitiaPID_TargetUtilization float64 `json:"JustitiaPID_TargetUtilization"`
+	JustitiaPID_CapacityB         float64 `json:"JustitiaPID_CapacityB"`
+	JustitiaPID_MinSubsidy        float64 `json:"JustitiaPID_MinSubsidy"`
+	JustitiaPID_MaxSubsidy        float64 `json:"JustitiaPID_MaxSubsidy"`
+	
+	// Lagrangian parameters
+	JustitiaLag_Alpha         float64 `json:"JustitiaLag_Alpha"`
+	JustitiaLag_WindowSize    float64 `json:"JustitiaLag_WindowSize"`
+	JustitiaLag_MinLambda     float64 `json:"JustitiaLag_MinLambda"`
+	JustitiaLag_MaxLambda     float64 `json:"JustitiaLag_MaxLambda"`
+	JustitiaLag_CongestionExp float64 `json:"JustitiaLag_CongestionExp"`
+	JustitiaLag_MaxInflation  uint64  `json:"JustitiaLag_MaxInflation"`
 }
 
 func ReadConfigFile() {
@@ -149,4 +183,21 @@ func ReadConfigFile() {
 	JustitiaGammaMin = config.JustitiaGammaMin
 	JustitiaGammaMax = config.JustitiaGammaMax
 	JustitiaRewardBase = config.JustitiaRewardBase
+	
+	// PID params
+	JustitiaPID_Kp = config.JustitiaPID_Kp
+	JustitiaPID_Ki = config.JustitiaPID_Ki
+	JustitiaPID_Kd = config.JustitiaPID_Kd
+	JustitiaPID_TargetUtilization = config.JustitiaPID_TargetUtilization
+	JustitiaPID_CapacityB = config.JustitiaPID_CapacityB
+	JustitiaPID_MinSubsidy = config.JustitiaPID_MinSubsidy
+	JustitiaPID_MaxSubsidy = config.JustitiaPID_MaxSubsidy
+	
+	// Lagrangian params
+	JustitiaLag_Alpha = config.JustitiaLag_Alpha
+	JustitiaLag_WindowSize = config.JustitiaLag_WindowSize
+	JustitiaLag_MinLambda = config.JustitiaLag_MinLambda
+	JustitiaLag_MaxLambda = config.JustitiaLag_MaxLambda
+	JustitiaLag_CongestionExp = config.JustitiaLag_CongestionExp
+	JustitiaLag_MaxInflation = config.JustitiaLag_MaxInflation
 }

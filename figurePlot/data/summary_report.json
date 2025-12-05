@@ -1,47 +1,47 @@
 {
   "Monoxide": {
     "total_epochs": 1,
-    "total_ctx": 190159,
-    "total_itx": 59841,
-    "avg_ctx_latency": 67.68093128907914,
-    "avg_itx_latency": 31.568696529135547,
+    "total_ctx": 94160,
+    "total_itx": 44035,
+    "avg_ctx_latency": 308.08976425233647,
+    "avg_itx_latency": 134.1644335415011,
     "avg_latency_reduction": 0.0,
     "avg_ctx_priority_rate": 0.0
   },
   "R=0": {
-    "total_epochs": 88,
-    "total_ctx": 94160,
-    "total_itx": 44035,
-    "avg_ctx_latency": 65.54235771590909,
-    "avg_itx_latency": 5.032400431818182,
-    "avg_latency_reduction": 50.83738636363637,
-    "avg_ctx_priority_rate": 74.27272727272727
+    "total_epochs": 161,
+    "total_ctx": 36798,
+    "total_itx": 31610,
+    "avg_ctx_latency": 142.9693717826087,
+    "avg_itx_latency": 59.079031875776394,
+    "avg_latency_reduction": 22.165341614906833,
+    "avg_ctx_priority_rate": 47.337329192546584
   },
   "R=E(f_B)": {
-    "total_epochs": 62,
-    "total_ctx": 37446,
-    "total_itx": 30971,
-    "avg_ctx_latency": 35.68491270967743,
-    "avg_itx_latency": 2.672707887096774,
-    "avg_latency_reduction": 40.028225806451616,
-    "avg_ctx_priority_rate": 58.71983870967742
+    "total_epochs": 159,
+    "total_ctx": 33035,
+    "total_itx": 31423,
+    "avg_ctx_latency": 191.2120323081761,
+    "avg_itx_latency": 70.33148529559747,
+    "avg_latency_reduction": 14.266037735849055,
+    "avg_ctx_priority_rate": 52.2625786163522
   },
   "R=E(f_A)+E(f_B)": {
-    "total_epochs": 76,
-    "total_ctx": 94160,
-    "total_itx": 44035,
-    "avg_ctx_latency": 54.19454568421053,
-    "avg_itx_latency": 34.69005680263158,
-    "avg_latency_reduction": 20.570394736842104,
-    "avg_ctx_priority_rate": 72.27776315789474
+    "total_epochs": 164,
+    "total_ctx": 32400,
+    "total_itx": 13379,
+    "avg_ctx_latency": 83.43329589024391,
+    "avg_itx_latency": 64.37099381097562,
+    "avg_latency_reduction": 11.76109756097561,
+    "avg_ctx_priority_rate": 61.38231707317074
   },
   "R=1 ETH/CTX": {
-    "total_epochs": 76,
-    "total_ctx": 94160,
-    "total_itx": 44035,
-    "avg_ctx_latency": 56.39402282894737,
-    "avg_itx_latency": 37.904495184210525,
-    "avg_latency_reduction": 4.151578947368421,
-    "avg_ctx_priority_rate": 72.23934210526315
+    "total_epochs": 163,
+    "total_ctx": 32167,
+    "total_itx": 13064,
+    "avg_ctx_latency": 82.86895789570552,
+    "avg_itx_latency": 64.16652759509202,
+    "avg_latency_reduction": -0.04030674846625767,
+    "avg_ctx_priority_rate": 59.66257668711656
   }
 }

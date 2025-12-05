@@ -1,8 +1,17 @@
 # 不要上传实验结果！
 # Do not upload your experimental results!
 expTest
+expTest_Lagrangian
+expTest_monoxide
+expTest_PID
+expTest_R_1ETH
+expTest_R_EA_EB
+expTest_R_EB
+expTest_R0
+expTest_RL
+
 
 # 不要上传可执行文件！
 # Do not upload your executable files!
 *.exe
-
+*.csv

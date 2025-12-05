@@ -5,6 +5,7 @@ import (
 	"blockEmulator/core"
 	"blockEmulator/fees/expectation"
 	"blockEmulator/incentive/justitia"
+	"blockEmulator/params"
 	"fmt"
 	"math/big"
 	"sort"
@@ -24,16 +25,32 @@ type Scheduler struct {
 	FeeTracker    *expectation.Tracker
 	SubsidyMode   justitia.SubsidyMode
 	CustomSubsidy func(*big.Int, *big.Int) *big.Int
+	Mechanism     *justitia.Mechanism // For dynamic subsidy modes (PID, Lagrangian)
+
+	// Epoch tracking for Lagrangian
+	epochSubsidyTotal *big.Int // Total subsidy issued in current epoch
+	epochTxCount      int      // Transaction count in current epoch
 }
 
 // NewScheduler creates a new Justitia-based transaction scheduler
 func NewScheduler(shardID, numShards int, feeTracker *expectation.Tracker, mode justitia.SubsidyMode) *Scheduler {
+	// Create Mechanism for dynamic subsidy modes
+	var mechanism *justitia.Mechanism
+	if mode == justitia.SubsidyPID || mode == justitia.SubsidyLagrangian {
+		config := params.GetJustitiaConfig()
+		mechanism = justitia.NewMechanism(config)
+		fmt.Printf("[Scheduler] Shard %d: Created Justitia Mechanism (mode=%s)\n", shardID, mode.String())
+	}
+
 	return &Scheduler{
-		ShardID:       shardID,
-		NumShards:     numShards,
-		FeeTracker:    feeTracker,
-		SubsidyMode:   mode,
-		CustomSubsidy: nil,
+		ShardID:           shardID,
+		NumShards:         numShards,
+		FeeTracker:        feeTracker,
+		SubsidyMode:       mode,
+		CustomSubsidy:     nil,
+		Mechanism:         mechanism,
+		epochSubsidyTotal: big.NewInt(0),
+		epochTxCount:      0,
 	}
 }
 
@@ -55,7 +72,7 @@ func (s *Scheduler) SelectForBlock(capacity int, txPool []*core.Transaction) []*
 	EA := s.FeeTracker.GetAvgITXFee(s.ShardID)
 
 	// DEBUG: Log EA value at start of selection
-	fmt.Printf("[SELECT] Shard %d: Starting selection with EA=%s, txPool size=%d\n", 
+	fmt.Printf("[SELECT] Shard %d: Starting selection with EA=%s, txPool size=%d\n",
 		s.ShardID, EA.String(), len(txPool))
 
 	// Compute scores for all transactions
@@ -118,7 +135,7 @@ func (s *Scheduler) SelectForBlock(capacity int, txPool []*core.Transaction) []*
 	// DEBUG: Log phase distribution
 	fmt.Printf("[SELECT] Shard %d: Phase distribution - P1:%d P2:%d P3:%d\n",
 		s.ShardID, len(phase1), len(phase2), len(phase3))
-	
+
 	// Count CTX by case
 	case1Count, case2Count, case3Count := 0, 0, 0
 	for _, tx := range phase1 {
@@ -206,7 +223,7 @@ func (s *Scheduler) SelectForBlock(capacity int, txPool []*core.Transaction) []*
 	}
 	fmt.Printf("[SELECT] Shard %d: Selected %d/%d txs (CTX:%d, ITX:%d)\n",
 		s.ShardID, len(selected), capacity, ctxSelected, len(selected)-ctxSelected)
-	
+
 	return selected
 }
 
@@ -228,10 +245,29 @@ func (s *Scheduler) scoreCTX(tx *core.Transaction, EA *big.Int) (score *big.Int,
 	}
 
 	// Compute subsidy R_AB (CRITICAL: This NEVER uses tx.FeeToProposer)
-	R := justitia.RAB(s.SubsidyMode, EA, EB, s.CustomSubsidy)
+	var R *big.Int
+	if s.Mechanism != nil {
+		// Create metrics for dynamic subsidy modes (PID, Lagrangian)
+		// For Lagrangian, we need QueueLengthB for congestion calculation
+		// Use moderately high congestion assumption
+		metrics := &justitia.DynamicMetrics{
+			QueueLengthB: 600, // Moderately high congestion
+			// Add other metrics if needed for PID mode
+		}
+		R = s.Mechanism.CalculateRAB(EA, EB, metrics)
+	} else {
+		// Use stateless RAB for static subsidy modes
+		R = justitia.RAB(s.SubsidyMode, EA, EB, nil, s.CustomSubsidy)
+	}
 
 	// Always update transaction with subsidy (scheduler is authoritative)
 	tx.SubsidyR = new(big.Int).Set(R)
+
+	// Accumulate subsidy for epoch tracking (Lagrangian)
+	if s.Mechanism != nil && s.SubsidyMode == justitia.SubsidyLagrangian {
+		s.epochSubsidyTotal.Add(s.epochSubsidyTotal, R)
+		s.epochTxCount++
+	}
 
 	// Ensure FeeToProposer is not nil
 	fee := tx.FeeToProposer
@@ -295,4 +331,36 @@ func (s *Scheduler) EstimateBlockReward(txs []*core.Transaction) *big.Int {
 	}
 
 	return totalReward
+}
+
+// UpdateEpoch should be called periodically (e.g., every N blocks) for Lagrangian mode
+// It updates the shadow price based on budget constraint and resets epoch counters
+func (s *Scheduler) UpdateEpoch() {
+	if s.Mechanism == nil || s.SubsidyMode != justitia.SubsidyLagrangian {
+		return
+	}
+
+	// Get inflation limit from config
+	inflationLimit := s.Mechanism.GetConfig().MaxInflation
+
+	// Update shadow price based on total subsidy issued
+	s.Mechanism.UpdateShadowPrice(s.epochSubsidyTotal, inflationLimit)
+
+	// Log epoch summary
+	lambda := s.Mechanism.GetShadowPrice()
+	fmt.Printf("[Lagrangian] Shard %d Epoch Update: TotalSubsidy=%s, Limit=%s, Lambda=%.4f, TxCount=%d\n",
+		s.ShardID, s.epochSubsidyTotal.String(), inflationLimit.String(), lambda, s.epochTxCount)
+
+	// Reset epoch counters
+	s.Mechanism.ResetEpoch()
+	s.epochSubsidyTotal = big.NewInt(0)
+	s.epochTxCount = 0
+}
+
+// GetEpochStats returns current epoch statistics
+func (s *Scheduler) GetEpochStats() (totalSubsidy *big.Int, txCount int, lambda float64) {
+	if s.Mechanism != nil && s.SubsidyMode == justitia.SubsidyLagrangian {
+		return new(big.Int).Set(s.epochSubsidyTotal), s.epochTxCount, s.Mechanism.GetShadowPrice()
+	}
+	return big.NewInt(0), 0, 0.0
 }

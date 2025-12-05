@@ -402,7 +402,7 @@ The fee tracker uses RWMutex for thread safety:
 ```json
 {
   "EnableJustitia": 1,
-  "JustitiaSubsidyMode": 1,        // 0=None, 1=DestAvg, 2=SumAvg, 3=Custom
+  "JustitiaSubsidyMode": 1,        // 0=None, 1=DestAvg, 2=SumAvg, 3=Custom, 4=ExtremeFixed
   "JustitiaWindowBlocks": 16,      // Sliding window size for E(f_s)
   "JustitiaGammaMin": 0,           // Min subsidy budget per block (0=unlimited)
   "JustitiaGammaMax": 0            // Max subsidy budget per block (0=unlimited)
