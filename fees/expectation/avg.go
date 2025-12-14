@@ -44,7 +44,7 @@ func (t *Tracker) OnBlockFinalized(shardID int, itxFeesInBlock []*big.Int) {
 		// Set a reasonable cap: 0.0001 ETH = 1e14 wei (99th percentile from data)
 		// Fees above this are likely errors or test transactions
 		cap := big.NewInt(1e14) // 0.0001 ETH
-		
+
 		sum := big.NewInt(0)
 		count := 0
 		for _, fee := range itxFeesInBlock {

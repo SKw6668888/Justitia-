@@ -296,17 +296,17 @@ func (s *Scheduler) scoreCTX(tx *core.Transaction, EA *big.Int) (score *big.Int,
 			R.String(), uA.String(), uB.String(), txCase.String())
 	} else {
 		utility = uB
-		// Destination shard always includes CTX if selected
-		// (classification is primarily for source shard decision)
-		txCase = justitia.Case1 // Treat as high priority at destination
+		// Classify from destination shard perspective
+		// Use EB as the local expectation, EA as the remote expectation
+		txCase = justitia.Classify(uB, EB, EA)
 		if tx.JustitiaCase == 0 {
-			tx.JustitiaCase = int(justitia.Case1)
+			tx.JustitiaCase = int(txCase)
 		}
 
 		// DEBUG: Log CTX scoring details for destination shard
-		fmt.Printf("[DEBUG] CTX Score (Dest S%d<-S%d): Fee=%s, EA=%s, EB=%s, R=%s, uA=%s, uB=%s\n",
+		fmt.Printf("[DEBUG] CTX Score (Dest S%d<-S%d): Fee=%s, EA=%s, EB=%s, R=%s, uA=%s, uB=%s, Case=%s\n",
 			s.ShardID, tx.FromShard, fee.String(), EA.String(), EB.String(),
-			R.String(), uA.String(), uB.String())
+			R.String(), uA.String(), uB.String(), txCase.String())
 	}
 
 	return new(big.Int).Set(utility), txCase

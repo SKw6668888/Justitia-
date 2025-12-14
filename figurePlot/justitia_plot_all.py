@@ -34,7 +34,6 @@ sns.set_context("paper", font_scale=1.3)
 # 颜色方案
 COLORS = {
     'Monoxide': '#E74C3C',      # 红色
-    'R=0': '#F39C12',           # 橙色
     'R=E(f_B)': '#27AE60',      # 绿色
     'R=E(f_A)+E(f_B)': '#3498DB',  # 蓝色
     'R=1 ETH/CTX': '#9B59B6'    # 紫色

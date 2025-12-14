@@ -13,7 +13,7 @@
 
   "InjectSpeed": 2000,
   "TotalDataSize": 250000,
-  "TxBatchSize": 25000,
+  "TxBatchSize": 2000,
 
   "BrokerNum": 10,
   "RelayWithMerkleProof": 0,
@@ -27,7 +27,7 @@
 
   "EnableJustitia": 1,
   "JustitiaSubsidyMode": 5,
-  "JustitiaWindowBlocks": 16,
+  "JustitiaWindowBlocks": 32,
   "JustitiaGammaMin": 0,
   "JustitiaGammaMax": 0,
   "JustitiaRewardBase": 1000000000000000000,
