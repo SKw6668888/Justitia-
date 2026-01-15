@@ -1,37 +1,27 @@
 {
   "ConsensusMethod": 3,
-  
-  "PbftViewChangeTimeOut":20000,
-
-  "ExpDataRootDir": "expTest_Lagrangian",
-
+  "PbftViewChangeTimeOut": 20000,
+  "ExpDataRootDir": "expTest_max0.2",
   "Block_Interval": 2000,
-
   "BlockSize": 400,
   "BlocksizeInBytes": 300000,
   "UseBlocksizeInBytes": 0,
-
   "InjectSpeed": 2000,
   "TotalDataSize": 250000,
   "TxBatchSize": 2000,
-
   "BrokerNum": 10,
   "RelayWithMerkleProof": 0,
-  
   "DatasetFile": "./23000000to23249999_BlockTransaction.csv",
   "ReconfigTimeGap": 50,
-
   "Delay": -1,
   "JitterRange": -1,
-  "Bandwidth":10000000,
-
+  "Bandwidth": 10000000,
   "EnableJustitia": 1,
   "JustitiaSubsidyMode": 6,
   "JustitiaWindowBlocks": 32,
   "JustitiaGammaMin": 0,
   "JustitiaGammaMax": 0,
   "JustitiaRewardBase": 1000000000000000000,
-
   "JustitiaPID_Kp": 1.5,
   "JustitiaPID_Ki": 0.1,
   "JustitiaPID_Kd": 0.05,
@@ -39,14 +29,12 @@
   "JustitiaPID_CapacityB": 1000.0,
   "JustitiaPID_MinSubsidy": 0.0,
   "JustitiaPID_MaxSubsidy": 5.0,
-
-  "JustitiaLag_Alpha": 0.1,
+  "JustitiaLag_Alpha": 0.01,
   "JustitiaLag_WindowSize": 1000.0,
   "JustitiaLag_MinLambda": 0.6,
   "JustitiaLag_MaxLambda": 10.0,
   "JustitiaLag_CongestionExp": 1.7,
-  "JustitiaLag_MaxInflation": 1000000000000000000,
-
+  "JustitiaLag_MaxInflation": 200000000000000000,
   "JustitiaRL_QueueThreshold1": 250.0,
   "JustitiaRL_QueueThreshold2": 500.0,
   "JustitiaRL_QueueThreshold3": 750.0,

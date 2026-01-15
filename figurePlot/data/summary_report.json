@@ -3,45 +3,36 @@
     "total_epochs": 1,
     "total_ctx": 94160,
     "total_itx": 44035,
-    "avg_ctx_latency": 308.08976425233647,
-    "avg_itx_latency": 134.1644335415011,
+    "avg_ctx_latency": 264.6707303632116,
+    "avg_itx_latency": 122.25458662427614,
     "avg_latency_reduction": 0.0,
     "avg_ctx_priority_rate": 0.0
   },
   "R=0": {
-    "total_epochs": 161,
-    "total_ctx": 36798,
-    "total_itx": 31610,
-    "avg_ctx_latency": 142.9693717826087,
-    "avg_itx_latency": 59.079031875776394,
-    "avg_latency_reduction": 22.165341614906833,
-    "avg_ctx_priority_rate": 47.337329192546584
+    "total_epochs": 163,
+    "total_ctx": 22879,
+    "total_itx": 29205,
+    "avg_ctx_latency": 122.28199590184049,
+    "avg_itx_latency": 147.18871500613497,
+    "avg_latency_reduction": 27.844355828220866,
+    "avg_ctx_priority_rate": 27.037484662576684
   },
   "R=E(f_B)": {
-    "total_epochs": 159,
-    "total_ctx": 33035,
-    "total_itx": 31423,
-    "avg_ctx_latency": 191.2120323081761,
-    "avg_itx_latency": 70.33148529559747,
-    "avg_latency_reduction": 14.266037735849055,
-    "avg_ctx_priority_rate": 52.2625786163522
+    "total_epochs": 157,
+    "total_ctx": 42785,
+    "total_itx": 18981,
+    "avg_ctx_latency": 83.46807099363058,
+    "avg_itx_latency": 150.97616040764328,
+    "avg_latency_reduction": 68.68159235668789,
+    "avg_ctx_priority_rate": 43.697515923566876
   },
   "R=E(f_A)+E(f_B)": {
-    "total_epochs": 164,
-    "total_ctx": 32400,
-    "total_itx": 13379,
-    "avg_ctx_latency": 83.43329589024391,
-    "avg_itx_latency": 64.37099381097562,
-    "avg_latency_reduction": 11.76109756097561,
-    "avg_ctx_priority_rate": 61.38231707317074
-  },
-  "R=1 ETH/CTX": {
-    "total_epochs": 163,
-    "total_ctx": 32167,
-    "total_itx": 13064,
-    "avg_ctx_latency": 82.86895789570552,
-    "avg_itx_latency": 64.16652759509202,
-    "avg_latency_reduction": -0.04030674846625767,
-    "avg_ctx_priority_rate": 59.66257668711656
+    "total_epochs": 328,
+    "total_ctx": 51121,
+    "total_itx": 29574,
+    "avg_ctx_latency": 241.291979902439,
+    "avg_itx_latency": 101.3683325914634,
+    "avg_latency_reduction": 183.85588414634145,
+    "avg_ctx_priority_rate": 64.09710365853658
   }
 }

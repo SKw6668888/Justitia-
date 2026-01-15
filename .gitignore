@@ -9,7 +9,13 @@ expTest_R_EA_EB
 expTest_R_EB
 expTest_R0
 expTest_RL
-
+expTest_Lagrangian_Alpha0.0001
+expTest_Lagrangian_Alpha0.001
+expTest_Lagrangian_Alpha0.01
+expTest_Lagrangian_Alpha0.1
+expTest_max0.2
+expTest_max1
+expTest_max2
 
 # 不要上传可执行文件！
 # Do not upload your executable files!

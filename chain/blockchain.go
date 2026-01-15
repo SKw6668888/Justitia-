@@ -274,6 +274,8 @@ func NewBlockChain(cc *params.ChainConfig, db ethdb.Database) (*BlockChain, erro
 
 	// Choose transaction pool implementation based on Justitia parameter
 	var txpool core.TxPoolInterface
+	var bc *BlockChain
+
 	if params.EnableJustitia == 1 {
 		// Create PriorityTxPool
 		priorityPool := core.NewPriorityTxPool()
@@ -295,17 +297,39 @@ func NewBlockChain(cc *params.ChainConfig, db ethdb.Database) (*BlockChain, erro
 		txpool = priorityPool
 		fmt.Printf("S%dN%d: Using PriorityTxPool with Justitia Scheduler (mode=%d, window=%d)\n",
 			cc.ShardID, cc.NodeID, params.JustitiaSubsidyMode, params.JustitiaWindowBlocks)
+
+		// Create blockchain first (needed for queue length getter)
+		bc = &BlockChain{
+			db:           db,
+			ChainConfig:  cc,
+			Txpool:       txpool,
+			Storage:      storage.NewStorage(chainDBfp, cc),
+			PartitionMap: make(map[string]uint64),
+		}
+
+		// Set queue length getter for dynamic subsidy calculation
+		// This allows PID and Lagrangian to use actual queue lengths
+		sched.SetQueueLengthGetter(func(shardID int) int64 {
+			// For now, return local shard's queue length
+			// In a real distributed system, this would query remote shards
+			if shardID == int(cc.ShardID) {
+				return int64(bc.Txpool.GetTxQueueLen())
+			}
+			// For remote shards, use a moderate default
+			// TODO: Implement cross-shard queue length queries
+			return 500
+		})
 	} else {
 		txpool = core.NewTxPool()
 		fmt.Printf("S%dN%d: Using standard TxPool (FIFO)\n", cc.ShardID, cc.NodeID)
-	}
 
-	bc := &BlockChain{
-		db:           db,
-		ChainConfig:  cc,
-		Txpool:       txpool,
-		Storage:      storage.NewStorage(chainDBfp, cc),
-		PartitionMap: make(map[string]uint64),
+		bc = &BlockChain{
+			db:           db,
+			ChainConfig:  cc,
+			Txpool:       txpool,
+			Storage:      storage.NewStorage(chainDBfp, cc),
+			PartitionMap: make(map[string]uint64),
+		}
 	}
 	curHash, err := bc.Storage.GetNewestBlockHash()
 	if err != nil {

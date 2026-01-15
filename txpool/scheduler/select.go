@@ -30,6 +30,9 @@ type Scheduler struct {
 	// Epoch tracking for Lagrangian
 	epochSubsidyTotal *big.Int // Total subsidy issued in current epoch
 	epochTxCount      int      // Transaction count in current epoch
+
+	// Queue length tracking for dynamic subsidy calculation
+	QueueLengthGetter func(shardID int) int64 // Function to get actual queue length from blockchain
 }
 
 // NewScheduler creates a new Justitia-based transaction scheduler
@@ -51,7 +54,13 @@ func NewScheduler(shardID, numShards int, feeTracker *expectation.Tracker, mode 
 		Mechanism:         mechanism,
 		epochSubsidyTotal: big.NewInt(0),
 		epochTxCount:      0,
+		QueueLengthGetter: nil, // Will be set by caller if needed
 	}
+}
+
+// SetQueueLengthGetter sets the function to get actual queue length from blockchain
+func (s *Scheduler) SetQueueLengthGetter(getter func(shardID int) int64) {
+	s.QueueLengthGetter = getter
 }
 
 // SetCustomSubsidy sets a custom subsidy function
@@ -248,13 +257,26 @@ func (s *Scheduler) scoreCTX(tx *core.Transaction, EA *big.Int) (score *big.Int,
 	var R *big.Int
 	if s.Mechanism != nil {
 		// Create metrics for dynamic subsidy modes (PID, Lagrangian)
-		// For Lagrangian, we need QueueLengthB for congestion calculation
-		// Use moderately high congestion assumption
+		// Get actual queue length from destination shard
+		var queueLengthB int64
+		if s.QueueLengthGetter != nil {
+			// Use actual queue length from destination shard
+			destShardID := tx.ToShard
+			queueLengthB = s.QueueLengthGetter(int(destShardID))
+		} else {
+			// Fallback: use moderate congestion assumption if getter not set
+			queueLengthB = 600
+		}
+
 		metrics := &justitia.DynamicMetrics{
-			QueueLengthB: 600, // Moderately high congestion
+			QueueLengthB: queueLengthB,
 			// Add other metrics if needed for PID mode
 		}
 		R = s.Mechanism.CalculateRAB(EA, EB, metrics)
+
+		// DEBUG: Log queue length and subsidy
+		fmt.Printf("[DEBUG] CTX S%d->S%d: QueueLengthB=%d, R=%s\n",
+			tx.FromShard, tx.ToShard, queueLengthB, R.String())
 	} else {
 		// Use stateless RAB for static subsidy modes
 		R = justitia.RAB(s.SubsidyMode, EA, EB, nil, s.CustomSubsidy)

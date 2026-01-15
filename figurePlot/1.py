@@ -96,6 +96,15 @@ def plot_ctx_latency_cdf(latency_data):
     
     fig, ax = plt.subplots(figsize=(10, 6))
     
+    # 标记样式
+    MARKERS = {
+        'Monoxide': 'x',
+        'R_EB': 'o',
+        'PID': '^',
+        'Lagrangian': 's',
+        'R_EA_EB': 'p'
+    }
+    
     # 为每个方案绘制CDF
     for method in ['Monoxide', 'R_EB', 'PID', 'Lagrangian', 'R_EA_EB']:
         if method not in latency_data or latency_data[method] is None:
@@ -115,6 +124,23 @@ def plot_ctx_latency_cdf(latency_data):
                 color=COLORS[method],
                 linewidth=2.5,
                 alpha=0.85)
+        
+        # 添加标记点（每隔一定间隔）
+        marker_step = max(1, len(sorted_latency) // 10)
+        marker_indices = range(0, len(sorted_latency), marker_step)
+        ax.plot(sorted_latency[marker_indices], cdf[marker_indices],
+                marker=MARKERS[method],
+                color=COLORS[method],
+                markersize=8,
+                linestyle='None',
+                markeredgewidth=1.5,
+                markerfacecolor='none')
+        
+        # 打印关键统计量
+        p50 = np.percentile(latency, 50)
+        p90 = np.percentile(latency, 90)
+        p99 = np.percentile(latency, 99)
+        print(f"  - {method}: P50={p50:.2f}s, P90={p90:.2f}s, P99={p99:.2f}s")
     
     # 设置坐标轴
     ax.set_xlabel('CTX Queueing Latency (seconds)', fontsize=14, fontweight='bold')
