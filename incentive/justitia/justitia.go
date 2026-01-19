@@ -27,6 +27,8 @@ const (
 	SubsidyPID
 	// SubsidyLagrangian means use Lagrangian optimization for dynamic subsidy
 	SubsidyLagrangian
+	// SubsidyHybrid means use hierarchical PID-Lagrangian control
+	SubsidyHybrid
 )
 
 // String returns the string representation of the subsidy mode
@@ -46,6 +48,8 @@ func (m SubsidyMode) String() string {
 		return "PID"
 	case SubsidyLagrangian:
 		return "Lagrangian"
+	case SubsidyHybrid:
+		return "Hybrid"
 	default:
 		return "Unknown"
 	}
@@ -53,11 +57,11 @@ func (m SubsidyMode) String() string {
 
 // DynamicMetrics holds dynamic blockchain state for incentive calculation
 type DynamicMetrics struct {
-	QueueLengthA     int64     // Queue length in Shard A
-	QueueLengthB     int64     // Queue length in Shard B
-	AvgWaitTimeA     float64   // Avg wait time in Shard A (ms)
-	AvgWaitTimeB     float64   // Avg wait time in Shard B (ms)
-	CurrentInflation *big.Int  // Total subsidy issued in current epoch
+	QueueLengthA     int64    // Queue length in Shard A
+	QueueLengthB     int64    // Queue length in Shard B
+	AvgWaitTimeA     float64  // Avg wait time in Shard A (ms)
+	AvgWaitTimeB     float64  // Avg wait time in Shard B (ms)
+	CurrentInflation *big.Int // Total subsidy issued in current epoch
 }
 
 // PIDState holds the internal state for PID controller
@@ -69,32 +73,31 @@ type PIDState struct {
 
 // PIDParams holds PID controller parameters
 type PIDParams struct {
-	Kp               float64 // Proportional gain
-	Ki               float64 // Integral gain
-	Kd               float64 // Derivative gain
+	Kp                float64 // Proportional gain
+	Ki                float64 // Integral gain
+	Kd                float64 // Derivative gain
 	TargetUtilization float64 // Target queue utilization (0.0 to 1.0)
-	CapacityB        float64 // Capacity of destination shard queue
-	MinSubsidy       float64 // Minimum subsidy multiplier
-	MaxSubsidy       float64 // Maximum subsidy multiplier
+	CapacityB         float64 // Capacity of destination shard queue
+	MinSubsidy        float64 // Minimum subsidy multiplier
+	MaxSubsidy        float64 // Maximum subsidy multiplier
 }
 
 // LagrangianState holds the internal state for Lagrangian optimization
 type LagrangianState struct {
-	Lambda           float64   // Shadow price (Lagrange multiplier)
-	TotalSubsidy     *big.Int  // Total subsidy issued in current epoch
-	LastUpdate       time.Time // Last update timestamp
-	EpochStartTime   time.Time // Start of current epoch
+	Lambda         float64   // Shadow price (Lagrange multiplier)
+	TotalSubsidy   *big.Int  // Total subsidy issued in current epoch
+	LastUpdate     time.Time // Last update timestamp
+	EpochStartTime time.Time // Start of current epoch
 }
 
 // LagrangianParams holds Lagrangian optimization parameters
 type LagrangianParams struct {
-	Alpha            float64   // Learning rate for shadow price update
-	WindowSize       float64   // Reference window size for congestion normalization
-	MinLambda        float64   // Minimum shadow price (prevents division by zero)
-	MaxLambda        float64   // Maximum shadow price (prevents extreme values)
-	CongestionExp    float64   // Exponent for congestion factor (default: 2.0 for quadratic)
+	Alpha         float64 // Learning rate for shadow price update
+	WindowSize    float64 // Reference window size for congestion normalization
+	MinLambda     float64 // Minimum shadow price (prevents division by zero)
+	MaxLambda     float64 // Maximum shadow price (prevents extreme values)
+	CongestionExp float64 // Exponent for congestion factor (default: 2.0 for quadratic)
 }
-
 
 // Config holds the configuration for Justitia incentive mechanism
 type Config struct {
@@ -103,7 +106,7 @@ type Config struct {
 	CustomF      func(*big.Int, *big.Int) *big.Int // Custom function for subsidy (if mode is Custom)
 	GammaMin     *big.Int                          // Optional: minimum subsidy budget per block
 	GammaMax     *big.Int                          // Optional: maximum subsidy budget per block
-	
+
 	// Dynamic algorithm parameters
 	PIDParams        PIDParams        // PID controller parameters
 	LagrangianParams LagrangianParams // Lagrangian optimization parameters
@@ -139,7 +142,7 @@ func NewMechanism(config *Config) *Mechanism {
 			EpochStartTime: now,
 		},
 	}
-	
+
 	return m
 }
 
@@ -151,7 +154,7 @@ func calcPIDSubsidy(metrics *DynamicMetrics, config *Config, state *PIDState, EB
 
 	params := config.PIDParams
 	now := time.Now()
-	
+
 	// Calculate current utilization (error signal)
 	// Error = QueueLengthB / CapacityB - TargetUtilization
 	var currentUtilization float64
@@ -161,15 +164,15 @@ func calcPIDSubsidy(metrics *DynamicMetrics, config *Config, state *PIDState, EB
 		// Fallback: normalize by a reasonable default capacity (e.g., 1000)
 		currentUtilization = float64(metrics.QueueLengthB) / 1000.0
 	}
-	
+
 	error := currentUtilization - params.TargetUtilization
-	
+
 	// Calculate time delta for integral and derivative
 	dt := now.Sub(state.LastUpdate).Seconds()
 	if dt <= 0 {
 		dt = 1.0 // Prevent division by zero
 	}
-	
+
 	// Update integral (with anti-windup)
 	state.Integral += error * dt
 	// Anti-windup: clamp integral to reasonable bounds
@@ -179,17 +182,17 @@ func calcPIDSubsidy(metrics *DynamicMetrics, config *Config, state *PIDState, EB
 	} else if state.Integral < -maxIntegral {
 		state.Integral = -maxIntegral
 	}
-	
+
 	// Calculate derivative
 	derivative := (error - state.PrevError) / dt
-	
+
 	// PID output
 	output := params.Kp*error + params.Ki*state.Integral + params.Kd*derivative
-	
+
 	// Update state for next iteration
 	state.PrevError = error
 	state.LastUpdate = now
-	
+
 	// Calculate subsidy multiplier: R = EB * (1 + output)
 	// Clamp output to reasonable bounds
 	multiplier := 1.0 + output
@@ -199,19 +202,19 @@ func calcPIDSubsidy(metrics *DynamicMetrics, config *Config, state *PIDState, EB
 	if multiplier > params.MaxSubsidy {
 		multiplier = params.MaxSubsidy
 	}
-	
+
 	// Convert EB to float, apply multiplier, convert back to big.Int
 	ebFloat := new(big.Float).SetInt(EB)
 	resultFloat := new(big.Float).Mul(ebFloat, big.NewFloat(multiplier))
-	
+
 	// Convert back to big.Int (truncate)
 	result, _ := resultFloat.Int(nil)
-	
+
 	// Ensure non-negative
 	if result.Sign() < 0 {
 		return big.NewInt(0)
 	}
-	
+
 	return result
 }
 
@@ -224,7 +227,7 @@ func calcLagrangianSubsidy(metrics *DynamicMetrics, config *Config, state *Lagra
 	}
 
 	params := config.LagrangianParams
-	
+
 	// Calculate congestion factor: (QueueLengthB / WindowSize)^CongestionExp
 	// This gives quadratic (or higher) preference to congested shards
 	var congestionFactor float64
@@ -236,32 +239,32 @@ func calcLagrangianSubsidy(metrics *DynamicMetrics, config *Config, state *Lagra
 		utilization := float64(metrics.QueueLengthB) / 1000.0
 		congestionFactor = math.Pow(utilization, params.CongestionExp)
 	}
-	
+
 	// Apply shadow price (Lagrange multiplier)
 	// Higher lambda means we're approaching inflation limit, so reduce subsidy
 	lambda := state.Lambda
 	if lambda < params.MinLambda {
 		lambda = params.MinLambda
 	}
-	
+
 	// Calculate subsidy: R = EB * CongestionFactor / Lambda
 	// Convert EB to float
 	ebFloat := new(big.Float).SetInt(EB)
-	
+
 	// Apply congestion factor and shadow price
 	multiplier := congestionFactor / lambda
-	
+
 	// Calculate result
 	resultFloat := new(big.Float).Mul(ebFloat, big.NewFloat(multiplier))
-	
+
 	// Convert back to big.Int (truncate)
 	result, _ := resultFloat.Int(nil)
-	
+
 	// Ensure non-negative
 	if result.Sign() < 0 {
 		return big.NewInt(0)
 	}
-	
+
 	return result
 }
 
@@ -271,35 +274,35 @@ func calcLagrangianSubsidy(metrics *DynamicMetrics, config *Config, state *Lagra
 func (m *Mechanism) UpdateShadowPrice(totalSubsidyIssued *big.Int, inflationLimit *big.Int) {
 	m.stateLock.Lock()
 	defer m.stateLock.Unlock()
-	
+
 	if totalSubsidyIssued == nil || inflationLimit == nil {
 		return
 	}
-	
+
 	params := m.config.LagrangianParams
 	state := m.lagrangianState
-	
+
 	// Calculate constraint violation: TotalSubsidy - Limit
 	violation := new(big.Int).Sub(totalSubsidyIssued, inflationLimit)
-	
+
 	// Convert to float for calculation
 	violationFloat := new(big.Float).SetInt(violation)
 	violationVal, _ := violationFloat.Float64()
-	
+
 	// Normalize by inflation limit to make alpha scale-independent
 	limitFloat := new(big.Float).SetInt(inflationLimit)
 	limitVal, _ := limitFloat.Float64()
-	
+
 	var normalizedViolation float64
 	if limitVal > 0 {
 		normalizedViolation = violationVal / limitVal
 	} else {
 		normalizedViolation = 0
 	}
-	
+
 	// Update shadow price: Lambda = Lambda + Alpha * NormalizedViolation
 	newLambda := state.Lambda + params.Alpha*normalizedViolation
-	
+
 	// Clamp lambda to reasonable bounds
 	if newLambda < params.MinLambda {
 		newLambda = params.MinLambda
@@ -307,7 +310,7 @@ func (m *Mechanism) UpdateShadowPrice(totalSubsidyIssued *big.Int, inflationLimi
 	if newLambda > params.MaxLambda {
 		newLambda = params.MaxLambda
 	}
-	
+
 	// Update state
 	state.Lambda = newLambda
 	state.TotalSubsidy = new(big.Int).Set(totalSubsidyIssued)
@@ -319,7 +322,7 @@ func (m *Mechanism) UpdateShadowPrice(totalSubsidyIssued *big.Int, inflationLimi
 func (m *Mechanism) ResetEpoch() {
 	m.stateLock.Lock()
 	defer m.stateLock.Unlock()
-	
+
 	now := time.Now()
 	m.lagrangianState.TotalSubsidy = big.NewInt(0)
 	m.lagrangianState.EpochStartTime = now
@@ -340,7 +343,6 @@ func (m *Mechanism) GetConfig() *Config {
 	return m.config
 }
 
-
 // CalculateRAB computes the subsidy R_AB for a cross-shard transaction from shard A to shard B
 // EA is E(f_A) (average ITX fee in source shard A)
 // EB is E(f_B) (average ITX fee in destination shard B)
@@ -350,7 +352,7 @@ func (m *Mechanism) GetConfig() *Config {
 func (m *Mechanism) CalculateRAB(EA, EB *big.Int, metrics *DynamicMetrics) *big.Int {
 	m.stateLock.Lock()
 	defer m.stateLock.Unlock()
-	
+
 	return m.calculateRABInternal(EA, EB, metrics)
 }
 
@@ -359,17 +361,17 @@ func (m *Mechanism) calculateRABInternal(EA, EB *big.Int, metrics *DynamicMetric
 	zero := big.NewInt(0)
 	mode := m.config.Mode
 	customF := m.config.CustomF
-	
+
 	switch mode {
 	case SubsidyNone:
 		return zero
-	
+
 	case SubsidyDestAvg:
 		if EB == nil {
 			return zero
 		}
 		return new(big.Int).Set(EB)
-	
+
 	case SubsidySumAvg:
 		if EA == nil && EB == nil {
 			return zero
@@ -382,7 +384,7 @@ func (m *Mechanism) calculateRABInternal(EA, EB *big.Int, metrics *DynamicMetric
 		}
 		// R = EA + EB
 		return new(big.Int).Add(EA, EB)
-	
+
 	case SubsidyCustom:
 		if customF != nil {
 			result := customF(EA, EB)
@@ -396,20 +398,20 @@ func (m *Mechanism) calculateRABInternal(EA, EB *big.Int, metrics *DynamicMetric
 			return new(big.Int).Set(EB)
 		}
 		return zero
-	
+
 	case SubsidyExtremeFixed:
 		// Extreme fixed subsidy: 1 ETH = 10^18 wei
 		return big.NewInt(1000000000000000000)
-	
+
 	case SubsidyPID:
 		// PID controller-based dynamic subsidy
 		return calcPIDSubsidy(metrics, m.config, m.pidState, EB)
-	
+
 	case SubsidyLagrangian:
 		// Lagrangian optimization-based dynamic subsidy
 		// Uses shadow price to enforce inflation constraint
 		return calcLagrangianSubsidy(metrics, m.config, m.lagrangianState, EB)
-	
+
 	default:
 		return zero
 	}

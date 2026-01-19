@@ -25,7 +25,8 @@ type Scheduler struct {
 	FeeTracker    *expectation.Tracker
 	SubsidyMode   justitia.SubsidyMode
 	CustomSubsidy func(*big.Int, *big.Int) *big.Int
-	Mechanism     *justitia.Mechanism // For dynamic subsidy modes (PID, Lagrangian)
+	Mechanism     *justitia.Mechanism        // For dynamic subsidy modes (PID, Lagrangian)
+	HybridCtrl    *justitia.HybridController // For Hybrid mode
 
 	// Epoch tracking for Lagrangian
 	epochSubsidyTotal *big.Int // Total subsidy issued in current epoch
@@ -39,10 +40,17 @@ type Scheduler struct {
 func NewScheduler(shardID, numShards int, feeTracker *expectation.Tracker, mode justitia.SubsidyMode) *Scheduler {
 	// Create Mechanism for dynamic subsidy modes
 	var mechanism *justitia.Mechanism
+	var hybridCtrl *justitia.HybridController
+
 	if mode == justitia.SubsidyPID || mode == justitia.SubsidyLagrangian {
 		config := params.GetJustitiaConfig()
 		mechanism = justitia.NewMechanism(config)
 		fmt.Printf("[Scheduler] Shard %d: Created Justitia Mechanism (mode=%s)\n", shardID, mode.String())
+	} else if mode == justitia.SubsidyHybrid {
+		config := params.GetJustitiaConfig()
+		epochInterval := 10 // Default: 10 blocks per epoch
+		hybridCtrl = justitia.NewHybridController(config, shardID, epochInterval)
+		fmt.Printf("[Scheduler] Shard %d: Created Hybrid Controller (Lagrangian+PID, epoch=%d blocks)\n", shardID, epochInterval)
 	}
 
 	return &Scheduler{
@@ -52,6 +60,7 @@ func NewScheduler(shardID, numShards int, feeTracker *expectation.Tracker, mode 
 		SubsidyMode:       mode,
 		CustomSubsidy:     nil,
 		Mechanism:         mechanism,
+		HybridCtrl:        hybridCtrl,
 		epochSubsidyTotal: big.NewInt(0),
 		epochTxCount:      0,
 		QueueLengthGetter: nil, // Will be set by caller if needed
@@ -255,7 +264,25 @@ func (s *Scheduler) scoreCTX(tx *core.Transaction, EA *big.Int) (score *big.Int,
 
 	// Compute subsidy R_AB (CRITICAL: This NEVER uses tx.FeeToProposer)
 	var R *big.Int
-	if s.Mechanism != nil {
+	if s.HybridCtrl != nil {
+		// Hybrid mode: Hierarchical control (Lagrangian + PID)
+		var queueLengthB int64
+		if s.QueueLengthGetter != nil {
+			destShardID := tx.ToShard
+			queueLengthB = s.QueueLengthGetter(int(destShardID))
+		} else {
+			queueLengthB = 600
+		}
+
+		metrics := &justitia.DynamicMetrics{
+			QueueLengthB: queueLengthB,
+		}
+		R = s.HybridCtrl.CalculateSubsidy(metrics, EA, EB)
+
+		// DEBUG: Log hybrid subsidy
+		fmt.Printf("[HYBRID] CTX S%d->S%d: Queue=%d, R=%s\n",
+			tx.FromShard, tx.ToShard, queueLengthB, R.String())
+	} else if s.Mechanism != nil {
 		// Create metrics for dynamic subsidy modes (PID, Lagrangian)
 		// Get actual queue length from destination shard
 		var queueLengthB int64

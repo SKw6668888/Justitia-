@@ -1,7 +1,7 @@
 {
     "ConsensusMethod": 3,
     "PbftViewChangeTimeOut": 20000,
-    "ExpDataRootDir": "expTest_R_EB",
+    "ExpDataRootDir": "expTest_Hybrid",
     "Block_Interval": 2000,
     "BlockSize": 400,
     "BlocksizeInBytes": 300000,
@@ -17,7 +17,7 @@
     "JitterRange": -1,
     "Bandwidth": 10000000,
     "EnableJustitia": 1,
-    "JustitiaSubsidyMode": 1,
+    "JustitiaSubsidyMode": 7,
     "JustitiaWindowBlocks": 32,
     "JustitiaGammaMin": 0,
     "JustitiaGammaMax": 0,

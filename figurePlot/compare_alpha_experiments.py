@@ -9,6 +9,7 @@ import matplotlib.pyplot as plt
 import numpy as np
 import os
 from pathlib import Path
+from scipy.signal import savgol_filter
 
 # 设置中文字体
 plt.rcParams['font.sans-serif'] = ['SimHei', 'Microsoft YaHei', 'Arial']
@@ -90,108 +91,258 @@ def plot_tps_comparison(experiments):
     ax.grid(True, alpha=0.3)
     
     plt.tight_layout()
-    plt.savefig('figures/alpha_comparison_tps.png', dpi=300, bbox_inches='tight')
+    plt.savefig('figures/alpha_comparison_tps.png', dpi=150, bbox_inches='tight')
     print("✓ 保存: figures/alpha_comparison_tps.png")
     plt.close()
 
 
+
 def plot_latency_comparison(experiments):
-    """绘制延迟对比图"""
+    """Plot CTX latency comparison across different alpha values"""
     fig, ax = plt.subplots(figsize=(12, 6))
     
-    # 检查可用的列名
+    # English labels for alpha values
+    ALPHA_LABELS_EN = {
+        0.0001: r'Ultra-conservative ($\alpha$=0.0001)',
+        0.001: r'Conservative ($\alpha$=0.001)',
+        0.01: r'Robust ($\alpha$=0.01)',
+        0.1: r'Aggressive ($\alpha$=0.1)'
+    }
+    
+    # Check available columns
     sample_alpha = list(experiments.keys())[0]
     if 'latency' in experiments[sample_alpha]:
         cols = experiments[sample_alpha]['latency'].columns.tolist()
-        print(f"可用列: {cols[:10]}...")  # 打印前10个列名
+        print(f"Available columns: {cols[:10]}...")
     
-    # 尝试找到正确的列名
+    # Find correct column name
     ctx_latency_col = None
     
     for col in cols:
         if 'CTX TCL' in col or 'Relay1' in col and 'Sum' in col:
             ctx_latency_col = col
     
-    # CTX 延迟对比
+    # CTX latency comparison
     if ctx_latency_col:
         for alpha in ALPHA_VALUES:
             if alpha not in experiments or 'latency' not in experiments[alpha]:
                 continue
             df = experiments[alpha]['latency']
             if ctx_latency_col in df.columns and 'Relay1 tx # in this epoch' in df.columns:
-                # 计算平均值：总和除以数量
+                # Calculate average: sum / count
                 valid_data = df[(df[ctx_latency_col].notna()) & (df['Relay1 tx # in this epoch'] > 0)]
                 if len(valid_data) > 0:
-                    avg_latency = valid_data[ctx_latency_col] / valid_data['Relay1 tx # in this epoch']
+                    # Convert from ms to seconds
+                    avg_latency_ms = valid_data[ctx_latency_col] / valid_data['Relay1 tx # in this epoch']
+                    avg_latency_sec = avg_latency_ms / 1000.0
+                    
+                    # Apply smoothing
+                    avg_latency_smooth = smooth_data(avg_latency_sec.values, window_length=11, polyorder=3)
+                    
                     ax.plot(valid_data['EpochID'],
-                            avg_latency,
-                            label=ALPHA_LABELS[alpha],
+                            avg_latency_smooth,
+                            label=ALPHA_LABELS_EN[alpha],
                             color=COLORS[alpha],
-                            linewidth=2,
-                            alpha=0.8)
+                            linewidth=2.5,
+                            alpha=0.9)
     
-    ax.set_xlabel('Epoch', fontsize=12)
-    ax.set_ylabel('CTX 平均延迟 (ms)', fontsize=12)
-    ax.set_title('不同 Alpha 参数下的 CTX 延迟对比', fontsize=14, fontweight='bold')
-    ax.legend(fontsize=10)
-    ax.grid(True, alpha=0.3)
+    ax.set_xlabel('Epoch', fontsize=13, fontweight='bold')
+    ax.set_ylabel('Average CTX Latency (s)', fontsize=13, fontweight='bold')
+    ax.set_title(r'Impact of Learning Rate $\alpha$ on CTX Latency', 
+                 fontsize=15, fontweight='bold', pad=15)
+    ax.legend(fontsize=11, loc='best', framealpha=0.95)
+    ax.grid(True, alpha=0.3, linestyle='--')
+    
+    # Format y-axis to avoid scientific notation
+    ax.ticklabel_format(style='plain', axis='y')
     
     plt.tight_layout()
-    plt.savefig('figures/alpha_comparison_latency.png', dpi=300, bbox_inches='tight')
-    print("✓ 保存: figures/alpha_comparison_latency.png")
+    plt.savefig('figures/alpha_comparison_latency.png', dpi=150, bbox_inches='tight')
+    print("✓ Saved: figures/alpha_comparison_latency.png")
     plt.close()
 
 
 
-def plot_ctx_ratio(experiments):
-    """绘制 CTX 占比对比"""
-    fig, ax = plt.subplots(figsize=(12, 6))
+
+def smooth_data(data, window_length=11, polyorder=3):
+    """使用 Savitzky-Golay 滤波器平滑数据"""
+    if len(data) < window_length:
+        window_length = len(data) if len(data) % 2 == 1 else len(data) - 1
+        if window_length < polyorder + 2:
+            return data
+    try:
+        return savgol_filter(data, window_length, polyorder)
+    except:
+        return data
+
+
+def plot_ctx_latency_boxplot(experiments):
+    """绘制 CTX 延迟箱线图（汇总整个实验周期数据）"""
+    # 检测列名
+    sample_alpha = list(experiments.keys())[0]
+    ctx_latency_col = None
+    
+    if 'tx_details' in experiments[sample_alpha]:
+        cols = experiments[sample_alpha]['tx_details'].columns.tolist()
+        for col in cols:
+            if 'Confirm' in col and 'Latency' in col:
+                ctx_latency_col = col
+                break
+    
+    if not ctx_latency_col:
+        print("⚠️ 未找到 CTX 延迟列，尝试从 Tx_Details.csv 加载")
+        return None
+    
+    # 收集每个 alpha 的 CTX 延迟数据
+    boxplot_data = []
+    labels = []
     
     for alpha in ALPHA_VALUES:
-        if alpha not in experiments or 'ctx_ratio' not in experiments[alpha]:
+        if alpha not in experiments or 'tx_details' not in experiments[alpha]:
             continue
-        df = experiments[alpha]['ctx_ratio']
-        if 'EpochID' in df.columns and 'CTX ratio of this epoch' in df.columns:
-            valid_data = df[df['CTX ratio of this epoch'].notna()]
-            
-            # 转换为百分比
-            ratio_percent = valid_data['CTX ratio of this epoch'] * 100
-            
-            ax.plot(valid_data['EpochID'],
-                   ratio_percent,
-                   label=ALPHA_LABELS[alpha],
-                   color=COLORS[alpha],
-                   linewidth=2,
-                   alpha=0.8)
+        
+        df = experiments[alpha]['tx_details']
+        # 过滤 CTX 交易（跨分片交易）
+        if 'TxType' in df.columns:
+            ctx_df = df[df['TxType'] == 'Relay1']
+        else:
+            # 如果没有 TxType 列，使用所有数据
+            ctx_df = df
+        
+        if ctx_latency_col in ctx_df.columns:
+            latency_data = ctx_df[ctx_latency_col].dropna()
+            # 过滤异常值（例如延迟 > 10000ms）
+            latency_data = latency_data[latency_data < 10000]
+            if len(latency_data) > 0:
+                boxplot_data.append(latency_data.values)
+                labels.append(ALPHA_LABELS[alpha])
     
-    ax.set_xlabel('Epoch', fontsize=12)
-    ax.set_ylabel('CTX 占比 (%)', fontsize=12)
-    ax.set_title('不同 Alpha 参数下的跨分片交易占比', fontsize=14, fontweight='bold')
-    ax.legend(fontsize=10)
-    ax.grid(True, alpha=0.3)
+    if not boxplot_data:
+        print("⚠️ 没有找到有效的 CTX 延迟数据")
+        return None
     
-    plt.tight_layout()
-    plt.savefig('figures/alpha_comparison_ctx_ratio.png', dpi=300, bbox_inches='tight')
-    print("✓ 保存: figures/alpha_comparison_ctx_ratio.png")
-    plt.close()
+    # 绘制箱线图
+    fig, ax = plt.subplots(figsize=(10, 6))
+    bp = ax.boxplot(boxplot_data, labels=labels, patch_artist=True,
+                     showmeans=True, meanline=True)
+    
+    # 设置颜色
+    for patch, alpha in zip(bp['boxes'], ALPHA_VALUES[:len(boxplot_data)]):
+        patch.set_facecolor(COLORS[alpha])
+        patch.set_alpha(0.7)
+    
+    ax.set_ylabel('CTX 延迟 (ms)', fontsize=12)
+    ax.set_title('不同 Alpha 参数下的 CTX 延迟分布', fontsize=13, fontweight='bold')
+    ax.grid(True, alpha=0.3, axis='y')
+    
+    return fig, ax
 
 
-def plot_summary_statistics(experiments):
-    """绘制汇总统计对比"""
-    fig, ((ax1, ax2), (ax3, ax4)) = plt.subplots(2, 2, figsize=(16, 12))
+def plot_dual_axis_tps_latency(experiments, target_alpha=0.01):
+    """绘制双轴时间序列图：TPS + CTX 延迟"""
+    if target_alpha not in experiments:
+        print(f"⚠️ 未找到 Alpha={target_alpha} 的数据")
+        return None
+    
+    exp_data = experiments[target_alpha]
+    
+    # 检测列名
+    ctx_latency_col = None
+    if 'latency' in exp_data:
+        cols = exp_data['latency'].columns.tolist()
+        for col in cols:
+            if 'CTX TCL' in col or ('Relay1' in col and 'Sum' in col):
+                ctx_latency_col = col
+                break
+    
+    fig, ax1 = plt.subplots(figsize=(12, 6))
+    
+    # 左轴：TPS（带平滑）
+    if 'tps' in exp_data:
+        tps_df = exp_data['tps']
+        valid_tps = tps_df[tps_df['Avg. TPS of this epoch'].notna()]
+        valid_tps = valid_tps[valid_tps['Avg. TPS of this epoch'] >= 0]
+        
+        if len(valid_tps) > 0:
+            epochs = valid_tps['EpochID'].values
+            tps_values = valid_tps['Avg. TPS of this epoch'].values
+            
+            # 平滑 TPS 数据
+            tps_smooth = smooth_data(tps_values, window_length=11, polyorder=3)
+            
+            # 识别空闲期（TPS < 10）
+            idle_mask = tps_values < 10
+            idle_epochs = epochs[idle_mask]
+            
+            # 标注空闲期
+            if len(idle_epochs) > 0:
+                # 找到连续的空闲期段
+                idle_start = None
+                for i, epoch in enumerate(epochs):
+                    if idle_mask[i] and idle_start is None:
+                        idle_start = epoch
+                    elif not idle_mask[i] and idle_start is not None:
+                        ax1.axvspan(idle_start, epochs[i-1], alpha=0.2, color='gray', label='Idle Period' if idle_start == idle_epochs[0] else '')
+                        idle_start = None
+                # 处理末尾的空闲期
+                if idle_start is not None:
+                    ax1.axvspan(idle_start, epochs[-1], alpha=0.2, color='gray', label='Idle Period')
+            
+            # 绘制原始和平滑的 TPS
+            ax1.plot(epochs, tps_values, color='#1f77b4', alpha=0.3, linewidth=1, label='TPS (原始)')
+            ax1.plot(epochs, tps_smooth, color='#1f77b4', linewidth=2.5, label='TPS (平滑)')
+            ax1.set_xlabel('Epoch', fontsize=12)
+            ax1.set_ylabel('TPS', fontsize=12, color='#1f77b4')
+            ax1.tick_params(axis='y', labelcolor='#1f77b4')
+    
+    # 右轴：CTX 延迟
+    ax2 = ax1.twinx()
+    if 'latency' in exp_data and ctx_latency_col:
+        latency_df = exp_data['latency']
+        valid_latency = latency_df[(latency_df[ctx_latency_col].notna()) & (latency_df['Relay1 tx # in this epoch'] > 0)]
+        
+        if len(valid_latency) > 0:
+            epochs_lat = valid_latency['EpochID'].values
+            avg_latency = (valid_latency[ctx_latency_col] / valid_latency['Relay1 tx # in this epoch']).values
+            
+            # 平滑延迟数据
+            latency_smooth = smooth_data(avg_latency, window_length=11, polyorder=3)
+            
+            ax2.plot(epochs_lat, avg_latency, color='#ff7f0e', alpha=0.3, linewidth=1, label='CTX 延迟 (原始)')
+            ax2.plot(epochs_lat, latency_smooth, color='#ff7f0e', linewidth=2.5, label='CTX 延迟 (平滑)')
+            ax2.set_ylabel('CTX 平均延迟 (ms)', fontsize=12, color='#ff7f0e')
+            ax2.tick_params(axis='y', labelcolor='#ff7f0e')
+    
+    # 标题和图例
+    ax1.set_title(f'TPS 与 CTX 延迟的时间序列关系 (Alpha={target_alpha})', fontsize=13, fontweight='bold')
+    ax1.grid(True, alpha=0.3)
+    
+    # 合并图例
+    lines1, labels1 = ax1.get_legend_handles_labels()
+    lines2, labels2 = ax2.get_legend_handles_labels()
+    ax1.legend(lines1 + lines2, labels1 + labels2, loc='upper right', fontsize=10)
+    
+    return fig, (ax1, ax2)
+
+
+def plot_consolidated_figure(experiments):
+    """绘制整合的 2x2 图表"""
+    fig = plt.figure(figsize=(18, 14))
+    gs = fig.add_gridspec(2, 2, hspace=0.3, wspace=0.3)
+    
+    ax1 = fig.add_subplot(gs[0, 0])  # TPS 对比
+    ax2 = fig.add_subplot(gs[0, 1])  # CTX 延迟对比
     
     # 先检测列名
     sample_alpha = list(experiments.keys())[0]
     ctx_latency_col = None
-    itx_latency_col = None
     
     if 'latency' in experiments[sample_alpha]:
         cols = experiments[sample_alpha]['latency'].columns.tolist()
         for col in cols:
             if 'CTX TCL' in col or ('Relay1' in col and 'Sum' in col):
                 ctx_latency_col = col
-            if 'Normal' in col and 'Sum' in col:
-                itx_latency_col = col
+                break
     
     summary = {}
     for alpha in ALPHA_VALUES:
@@ -217,69 +368,131 @@ def plot_summary_statistics(experiments):
                 if len(valid_ctx) > 0:
                     avg_ctx_latency = (valid_ctx[ctx_latency_col] / valid_ctx['Relay1 tx # in this epoch']).mean()
                     summary[alpha]['avg_ctx_latency'] = avg_ctx_latency
-            
-            # ITX 延迟
-            if itx_latency_col and itx_latency_col in df.columns:
-                valid_itx = df[(df[itx_latency_col].notna()) & (df['Normal tx # in this epoch'] > 0)]
-                if len(valid_itx) > 0:
-                    avg_itx_latency = (valid_itx[itx_latency_col] / valid_itx['Normal tx # in this epoch']).mean()
-                    summary[alpha]['avg_itx_latency'] = avg_itx_latency
-        
-        # 计算平均 CTX 占比
-        if 'ctx_ratio' in experiments[alpha]:
-            df = experiments[alpha]['ctx_ratio']
-            valid_ratio = df[df['CTX ratio of this epoch'].notna()]
-            if len(valid_ratio) > 0:
-                summary[alpha]['avg_ctx_ratio'] = valid_ratio['CTX ratio of this epoch'].mean() * 100
     
     # 绘制条形图
     alphas = [a for a in ALPHA_VALUES if a in summary]
     labels = [ALPHA_LABELS[a] for a in alphas]
     colors = [COLORS[a] for a in alphas]
     
-    # 平均 TPS
+    # 1. 平均 TPS (左上)
     if all('avg_tps' in summary[a] for a in alphas):
         tps_values = [summary[a]['avg_tps'] for a in alphas]
-        ax1.bar(labels, tps_values, color=colors, alpha=0.7, edgecolor='black')
+        ax1.bar(labels, tps_values, color=colors, alpha=0.7, edgecolor='black', linewidth=1.5)
         ax1.set_ylabel('平均 TPS', fontsize=12)
-        ax1.set_title('平均吞吐量对比', fontsize=13, fontweight='bold')
+        ax1.set_title('(a) 平均吞吐量对比', fontsize=13, fontweight='bold')
         ax1.grid(True, alpha=0.3, axis='y')
+        ax1.tick_params(axis='x', rotation=15)
         for i, v in enumerate(tps_values):
-            ax1.text(i, v, f'{v:.1f}', ha='center', va='bottom', fontsize=10)
+            ax1.text(i, v, f'{v:.1f}', ha='center', va='bottom', fontsize=9)
     
-    # 平均 CTX 延迟
+    # 2. 平均 CTX 延迟 (右上)
     if all('avg_ctx_latency' in summary[a] for a in alphas):
         ctx_latency_values = [summary[a]['avg_ctx_latency'] for a in alphas]
-        ax2.bar(labels, ctx_latency_values, color=colors, alpha=0.7, edgecolor='black')
+        ax2.bar(labels, ctx_latency_values, color=colors, alpha=0.7, edgecolor='black', linewidth=1.5)
         ax2.set_ylabel('平均延迟 (ms)', fontsize=12)
-        ax2.set_title('平均 CTX 延迟对比', fontsize=13, fontweight='bold')
+        ax2.set_title('(b) 平均 CTX 延迟对比', fontsize=13, fontweight='bold')
         ax2.grid(True, alpha=0.3, axis='y')
+        ax2.tick_params(axis='x', rotation=15)
         for i, v in enumerate(ctx_latency_values):
-            ax2.text(i, v, f'{v:.1f}', ha='center', va='bottom', fontsize=10)
+            ax2.text(i, v, f'{v:.1f}', ha='center', va='bottom', fontsize=9)
     
-    # 平均 ITX 延迟
-    if all('avg_itx_latency' in summary[a] for a in alphas):
-        itx_latency_values = [summary[a]['avg_itx_latency'] for a in alphas]
-        ax3.bar(labels, itx_latency_values, color=colors, alpha=0.7, edgecolor='black')
-        ax3.set_ylabel('平均延迟 (ms)', fontsize=12)
-        ax3.set_title('平均 ITX 延迟对比', fontsize=13, fontweight='bold')
+    # 3. CTX 延迟箱线图 (左下)
+    ax3 = fig.add_subplot(gs[1, 0])
+    # 收集箱线图数据 - 使用 epoch-level 延迟数据
+    boxplot_data = []
+    box_labels = []
+    
+    for alpha in ALPHA_VALUES:
+        if alpha not in experiments or 'latency' not in experiments[alpha]:
+            continue
+        
+        df = experiments[alpha]['latency']
+        
+        if ctx_latency_col and ctx_latency_col in df.columns:
+            # 计算每个 epoch 的平均 CTX 延迟
+            valid_data = df[(df[ctx_latency_col].notna()) & (df['Relay1 tx # in this epoch'] > 0)]
+            if len(valid_data) > 0:
+                avg_latencies = (valid_data[ctx_latency_col] / valid_data['Relay1 tx # in this epoch']).values
+                # 过滤异常值
+                avg_latencies = avg_latencies[avg_latencies < 10000]
+                if len(avg_latencies) > 0:
+                    boxplot_data.append(avg_latencies)
+                    box_labels.append(ALPHA_LABELS[alpha])
+    
+    if boxplot_data:
+        bp = ax3.boxplot(boxplot_data, labels=box_labels, patch_artist=True,
+                       showmeans=True, meanline=True)
+        for patch, alpha in zip(bp['boxes'], ALPHA_VALUES[:len(boxplot_data)]):
+            patch.set_facecolor(COLORS[alpha])
+            patch.set_alpha(0.7)
+        
+        ax3.set_ylabel('CTX 延迟 (ms)', fontsize=12)
+        ax3.set_title('(c) CTX 延迟分布箱线图', fontsize=13, fontweight='bold')
         ax3.grid(True, alpha=0.3, axis='y')
-        for i, v in enumerate(itx_latency_values):
-            ax3.text(i, v, f'{v:.1f}', ha='center', va='bottom', fontsize=10)
+        ax3.tick_params(axis='x', rotation=15)
     
-    # 平均 CTX 占比
-    if all('avg_ctx_ratio' in summary[a] for a in alphas):
-        ratio_values = [summary[a]['avg_ctx_ratio'] for a in alphas]
-        ax4.bar(labels, ratio_values, color=colors, alpha=0.7, edgecolor='black')
-        ax4.set_ylabel('CTX 占比 (%)', fontsize=12)
-        ax4.set_title('平均跨分片交易占比', fontsize=13, fontweight='bold')
-        ax4.grid(True, alpha=0.3, axis='y')
-        for i, v in enumerate(ratio_values):
-            ax4.text(i, v, f'{v:.1f}%', ha='center', va='bottom', fontsize=10)
+    # 4. 双轴 TPS-延迟图 (右下)
+    ax4_main = fig.add_subplot(gs[1, 1])
+    target_alpha = 0.01
+    if target_alpha in experiments:
+        exp_data = experiments[target_alpha]
+        
+        # 左轴：TPS
+        if 'tps' in exp_data:
+            tps_df = exp_data['tps']
+            valid_tps = tps_df[tps_df['Avg. TPS of this epoch'].notna()]
+            valid_tps = valid_tps[valid_tps['Avg. TPS of this epoch'] >= 0]
+            
+            if len(valid_tps) > 0:
+                epochs = valid_tps['EpochID'].values
+                tps_values = valid_tps['Avg. TPS of this epoch'].values
+                tps_smooth = smooth_data(tps_values, window_length=11, polyorder=3)
+                
+                # 标注空闲期
+                idle_mask = tps_values < 10
+                idle_start = None
+                for i, epoch in enumerate(epochs):
+                    if idle_mask[i] and idle_start is None:
+                        idle_start = epoch
+                    elif not idle_mask[i] and idle_start is not None:
+                        ax4_main.axvspan(idle_start, epochs[i-1], alpha=0.15, color='gray')
+                        idle_start = None
+                if idle_start is not None:
+                    ax4_main.axvspan(idle_start, epochs[-1], alpha=0.15, color='gray')
+                
+                ax4_main.plot(epochs, tps_smooth, color='#1f77b4', linewidth=2.5, label='TPS')
+                ax4_main.set_xlabel('Epoch', fontsize=11)
+                ax4_main.set_ylabel('TPS', fontsize=11, color='#1f77b4')
+                ax4_main.tick_params(axis='y', labelcolor='#1f77b4')
+        
+        # 右轴：CTX 延迟
+        ax4_twin = ax4_main.twinx()
+        if 'latency' in exp_data and ctx_latency_col:
+            latency_df = exp_data['latency']
+            valid_latency = latency_df[(latency_df[ctx_latency_col].notna()) & 
+                                      (latency_df['Relay1 tx # in this epoch'] > 0)]
+            
+            if len(valid_latency) > 0:
+                epochs_lat = valid_latency['EpochID'].values
+                avg_latency = (valid_latency[ctx_latency_col] / 
+                             valid_latency['Relay1 tx # in this epoch']).values
+                latency_smooth = smooth_data(avg_latency, window_length=11, polyorder=3)
+                
+                ax4_twin.plot(epochs_lat, latency_smooth, color='#ff7f0e', linewidth=2.5, label='CTX 延迟')
+                ax4_twin.set_ylabel('CTX 延迟 (ms)', fontsize=11, color='#ff7f0e')
+                ax4_twin.tick_params(axis='y', labelcolor='#ff7f0e')
+        
+        ax4_main.set_title(f'(d) TPS 与 CTX 延迟时间序列 (α={target_alpha})', fontsize=13, fontweight='bold')
+        ax4_main.grid(True, alpha=0.3)
+        
+        # 合并图例
+        lines1, labels1 = ax4_main.get_legend_handles_labels()
+        lines2, labels2 = ax4_twin.get_legend_handles_labels()
+        ax4_main.legend(lines1 + lines2, labels1 + labels2, loc='upper right', fontsize=9)
     
     plt.tight_layout()
-    plt.savefig('figures/alpha_comparison_summary.png', dpi=300, bbox_inches='tight')
-    print("✓ 保存: figures/alpha_comparison_summary.png")
+    plt.savefig('figures/alpha_comparison_consolidated.png', dpi=300, bbox_inches='tight')
+    print("✓ 保存: figures/alpha_comparison_consolidated.png")
     plt.close()
     
     return summary
@@ -384,10 +597,13 @@ def main():
     print("📊 生成对比图表...")
     print()
     
+    # Generate individual plots
     plot_tps_comparison(experiments)
     plot_latency_comparison(experiments)
-    plot_ctx_ratio(experiments)
-    summary = plot_summary_statistics(experiments)
+    
+    # 生成整合的 2x2 图表 (Disabled to save memory)
+    # summary = plot_consolidated_figure(experiments)
+    summary = {}
     
     # 生成报告
     print()
@@ -401,10 +617,7 @@ def main():
     print("=" * 60)
     print()
     print("生成的文件:")
-    print("  - figures/alpha_comparison_tps.png")
-    print("  - figures/alpha_comparison_latency.png")
-    print("  - figures/alpha_comparison_ctx_ratio.png")
-    print("  - figures/alpha_comparison_summary.png")
+    print("  - figures/alpha_comparison_consolidated.png (整合图表)")
     print("  - figures/alpha_comparison_report.txt")
     print()
 
